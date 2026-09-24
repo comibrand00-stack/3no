@@ -1,0 +1,82 @@
+[
+    {
+        "fileHash": "sha256-23f6f15b070b235ed13c4e878149a46e311ed4ef7db0918a25bca28fcc2b532c",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/comibrand00-stack/3no",
+        "fileSize": 26043,
+        "status": 1,
+        "language": "ar",
+        "authors": [
+            "comibrand00-stack"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "version": 3,
+        "internalName": "AlooyTV",
+        "description": "alooyTV - Arabic, Gulf, Turkish and Korean series and movies",
+        "url": "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/AlooyTV.cs3",
+        "name": "AlooyTV"
+    },
+    {
+        "fileHash": "sha256-21d668b35bb4948c64754add05497b9bb76e4962434d531cebba49b497586819",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/comibrand00-stack/3no",
+        "fileSize": 35129,
+        "status": 1,
+        "language": "en",
+        "authors": [
+            "comibrand00-stack"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "version": 1,
+        "internalName": "BingeBang",
+        "description": "BingeBang - movies and series with Arabic subtitles",
+        "url": "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/BingeBang.cs3",
+        "name": "BingeBang"
+    },
+    {
+        "fileHash": "sha256-f08dcc109d6fb8027e0a3528d49b13e7e01069379d8d727544dc51a46539cf3e",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/comibrand00-stack/3no",
+        "fileSize": 34421,
+        "status": 1,
+        "language": "ar",
+        "authors": [
+            "comibrand00-stack"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "version": 1,
+        "internalName": "Cimaleek",
+        "description": "CIMALEEK (\u0633\u064a\u0645\u0627 \u0644\u064a\u0643) - Arabic movies, series and anime",
+        "url": "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/Cimaleek.cs3",
+        "name": "Cimaleek"
+    },
+    {
+        "fileHash": "sha256-77f2987781f3230b3d7422c3953b9361768f09c41804d7af11baee3870adb44f",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/comibrand00-stack/3no",
+        "fileSize": 23090,
+        "status": 1,
+        "language": "ar",
+        "authors": [
+            "comibrand00-stack"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "version": 1,
+        "internalName": "Qesset",
+        "description": "\u0642\u0635\u0629 \u0639\u0634\u0642 (Qesset) - movies and series provider",
+        "url": "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/Qesset.cs3",
+        "name": "Qesset"
+    }
+]
