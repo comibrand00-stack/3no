@@ -457,23 +457,6 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val info = try {
-            JSONObject(data)
-        } catch (_: Exception) {
-            null
-        }
-        val id = info?.optInt("i", 0)?.takeIf { it > 0 } ?: return false
-        val kind = info?.optString("k")?.ifBlank { null } ?: "movie"
-        val title = info?.optString("t")?.ifBlank { null }
-        val year = info?.optInt("y", 0)?.takeIf { it > 0 }
-        val season = info?.optInt("s", 0)?.takeIf { it > 0 }
-        val episode = info?.optInt("e", 0)?.takeIf { it > 0 }
-        val imdbId = info?.optString("imdb")?.ifBlank { null }
-
-        val isTv = kind == "tv"
-        if (isTv && (season == null || episode == null)) return false
-
-        val defs = if (isTv) tvServers else movieServers
         var emitted = 0
         var arabicAdded = false
         var vixSt = "-"
@@ -489,81 +472,108 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
             subtitleCallback(file)
         }
 
-        for (def in defs) {
-            val url = if (isTv) {
-                buildTvUrl(def, id, season!!, episode!!)
-            } else {
-                buildMovieUrl(def, id, imdbId)
-            } ?: continue
-            if (!isResolvedHost(url)) continue
-
-            val before = emitted
-            val status = try {
-                resolveServer(def, url, id, season, episode, emitSub, emit) ?: continue
-            } catch (e: Exception) {
-                "x:" + shortError(e)
-            }
-            val st = if (emitted > before) {
-                "ok"
-            } else if (status == "ok") {
-                "e:none"
-            } else {
-                status
-            }
-            val host = hostOf(url)
-            when {
-                host.endsWith("vixsrc.to") -> vixSt = st
-                host.endsWith("111movies.net") || host.endsWith("vidlove.cc") -> vidSt = st
-                host.endsWith("modiplay.xyz") -> modSt = st
-            }
-        }
-
-        for (def in defs) {
-            val url = if (isTv) {
-                buildTvUrl(def, id, season!!, episode!!)
-            } else {
-                buildMovieUrl(def, id, imdbId)
-            } ?: continue
-            if (isResolvedHost(url)) continue
-
-            try {
-                loadExtractor(url, "$mainUrl/", emitSub, emit)
+        try {
+            val info = try {
+                JSONObject(data)
             } catch (_: Exception) {
-                // no registered extractor can play it
+                null
             }
-        }
+            val id = info?.optInt("i", 0)?.takeIf { it > 0 }
+            if (id == null) {
+                emit(diagLink("data=noid"))
+                return emitted > 0
+            }
+            val kind = info?.optString("k")?.ifBlank { null } ?: "movie"
+            val title = info?.optString("t")?.ifBlank { null }
+            val year = info?.optInt("y", 0)?.takeIf { it > 0 }
+            val season = info?.optInt("s", 0)?.takeIf { it > 0 }
+            val episode = info?.optInt("e", 0)?.takeIf { it > 0 }
+            val imdbId = info?.optString("imdb")?.ifBlank { null }
 
-        val broken = listOf("vix" to vixSt, "vid" to vidSt, "mod" to modSt)
-            .filter { it.second != "-" && it.second != "ok" }
-        if (broken.isNotEmpty()) {
-            callback(
-                newExtractorLink(
-                    source = name,
-                    name = "DIAG " + broken.joinToString(" ") { "${it.first}=${it.second}" },
-                    url = "$mainUrl/",
-                    type = ExtractorLinkType.VIDEO,
-                ) {
-                    this.referer = "$mainUrl/"
+            val isTv = kind == "tv"
+            if (isTv && (season == null || episode == null)) {
+                emit(diagLink("data=nos"))
+                return emitted > 0
+            }
+
+            val defs = if (isTv) tvServers else movieServers
+
+            for (def in defs) {
+                val url = if (isTv) {
+                    buildTvUrl(def, id, season!!, episode!!)
+                } else {
+                    buildMovieUrl(def, id, imdbId)
+                } ?: continue
+                if (!isResolvedHost(url)) continue
+
+                val before = emitted
+                val status = try {
+                    resolveServer(def, url, id, season, episode, emitSub, emit) ?: continue
+                } catch (t: Throwable) {
+                    "x:" + shortError(t)
                 }
-            )
-        }
-
-        if (!arabicAdded) {
-            val arabic = findArabicSubtitle(title, year, season, episode)
-            if (arabic != null) {
-                subtitleCallback(
-                    SubtitleFile("Arabic", arabic).apply {
-                        this.headers = mapOf("User-Agent" to BROWSER_UA)
-                    }
-                )
+                val st = when {
+                    emitted > before -> "ok"
+                    status == "ok" -> "e:none"
+                    else -> status
+                }
+                val host = hostOf(url)
+                when {
+                    host.endsWith("vixsrc.to") -> vixSt = st
+                    host.endsWith("111movies.net") || host.endsWith("vidlove.cc") -> vidSt = st
+                    host.endsWith("modiplay.xyz") -> modSt = st
+                }
             }
+
+            for (def in defs) {
+                val url = if (isTv) {
+                    buildTvUrl(def, id, season!!, episode!!)
+                } else {
+                    buildMovieUrl(def, id, imdbId)
+                } ?: continue
+                if (isResolvedHost(url)) continue
+
+                try {
+                    loadExtractor(url, "$mainUrl/", emitSub, emit)
+                } catch (t: Throwable) {
+                    // no registered extractor can play it
+                }
+            }
+
+            val broken = listOf("vix" to vixSt, "vid" to vidSt, "mod" to modSt)
+                .filter { it.second != "ok" }
+            if (emitted == 0 || broken.isNotEmpty()) {
+                val label = if (broken.isEmpty()) {
+                    "none"
+                } else {
+                    broken.joinToString(" ") { "${it.first}=${it.second}" }
+                }
+                emit(diagLink(label))
+            }
+
+            if (!arabicAdded) {
+                val arabic = findArabicSubtitle(title, year, season, episode)
+                if (arabic != null) {
+                    subtitleCallback(
+                        SubtitleFile("Arabic", arabic).apply {
+                            this.headers = mapOf("User-Agent" to BROWSER_UA)
+                        }
+                    )
+                }
+            }
+        } catch (t: Throwable) {
+            // never let a resolver crash the player
         }
 
         return emitted > 0
     }
 
     private fun shortError(e: Throwable): String {
-        val n = e::class.java.simpleName
+        val n = try {
+            e.javaClass.simpleName
+        } catch (t: Throwable) {
+            "?"
+        }
         return when {
             n.contains("Cloudflare", true) -> "CF"
             n.contains("Timeout", true) || n.contains("Interrupted", true) -> "TO"
@@ -572,9 +582,20 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
             n.contains("Connect", true) -> "CN"
             n.contains("Json", true) -> "JS"
             n.contains("Http", true) -> "HTTP"
+            n.contains("Null", true) -> "NPE"
             else -> n.take(9).ifBlank { "?" }
         }
     }
+
+    private suspend fun diagLink(label: String): ExtractorLink =
+        newExtractorLink(
+            source = name,
+            name = "DIAG $label",
+            url = "$mainUrl/",
+            type = ExtractorLinkType.VIDEO,
+        ) {
+            this.referer = "$mainUrl/"
+        }
 
     private fun isResolvedHost(url: String): Boolean {
         val host = hostOf(url)
@@ -614,16 +635,11 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
     private fun originOf(url: String): String =
         Regex("""^(https?://[^/]+)""").find(url)?.groupValues?.get(1) ?: ""
 
-    private fun embedHeaders(referer: String): Map<String, String> {
-        val origin = originOf(referer)
-        return buildMap {
-            put("User-Agent", BROWSER_UA)
-            put("Accept", "*/*")
-            put("Accept-Language", "en-US,en;q=0.9,ar;q=0.8")
-            put("Referer", referer)
-            if (origin.isNotBlank()) put("Origin", origin)
-        }
-    }
+    private fun embedHeaders(referer: String): Map<String, String> = mapOf(
+        "User-Agent" to BROWSER_UA,
+        "Accept" to "*/*",
+        "Referer" to referer,
+    )
 
     private suspend fun fetchText(url: String, referer: String): String {
         var error: Exception? = null
