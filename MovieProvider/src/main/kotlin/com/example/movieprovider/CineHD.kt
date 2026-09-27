@@ -38,6 +38,9 @@ class CineHD : MainAPI() {
         const val TMDB_KEY = "ef311eb0b9b07b9c73e9fb0a732cc150"
         const val IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 
+        const val VIDLOVE_API = "https://api.vidlove.cc"
+        const val VIDLOVE_PLAYER = "https://player.vidlove.cc"
+
         const val ROW_BATCH_SIZE = 6
         const val MAX_ROW_ITEMS = 24
         const val EPISODE_BATCH_SIZE = 6
@@ -147,6 +150,28 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
     private val movieServers: List<ServerDef> by lazy { parseServers(MOVIE_SERVERS) }
     private val tvServers: List<ServerDef> by lazy { parseServers(TV_SERVERS) }
 
+    private val countryRows = listOf(
+        "United States" to "US",
+        "United Kingdom" to "GB",
+        "France" to "FR",
+        "Spain" to "ES",
+        "Turkey" to "TR",
+        "South Korea" to "KR",
+        "Japan" to "JP",
+        "Germany" to "DE",
+        "Italy" to "IT",
+        "Brazil" to "BR",
+        "India" to "IN",
+        "Egypt" to "EG",
+        "Mexico" to "MX",
+        "Nigeria" to "NG",
+    ).flatMap { (label, code) ->
+        listOf(
+            "Movies ($label)" to "type=movie&country=$code",
+            "TV Shows ($label)" to "type=tv&country=$code",
+        )
+    }
+
     private val mainRows = listOf(
         "Trending Movies" to "type=movie&trending=true",
         "Trending TV Shows" to "type=tv&trending=true",
@@ -156,8 +181,6 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         "Popular TV Shows" to "type=tv",
         "Top Rated Movies" to "type=movie&sort=rating",
         "Top Rated TV Shows" to "type=tv&sort=rating",
-        "New Movies" to "type=movie&sort=year",
-        "New TV Shows" to "type=tv&sort=year",
         "Netflix Movies" to "type=movie&watch_provider=8",
         "Netflix Shows" to "type=tv&watch_provider=8",
         "Prime Video Movies" to "type=movie&watch_provider=9",
@@ -166,10 +189,7 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         "Disney+ Shows" to "type=tv&watch_provider=337",
         "Apple TV+ Shows" to "type=tv&watch_provider=350",
         "Max Shows" to "type=tv&watch_provider=1899",
-        "Peacock Shows" to "type=tv&watch_provider=386",
-        "Indian Movies" to "type=movie&country=IN",
-        "Indian TV Shows" to "type=tv&country=IN",
-    )
+    ) + countryRows
 
     // ---------------------------------------------------------------- main page
 
@@ -456,7 +476,17 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         if (isTv && (season == null || episode == null)) return false
 
         val defs = if (isTv) tvServers else movieServers
-        var found = false
+        var emitted = 0
+        var arabicAdded = false
+
+        val emit: (ExtractorLink) -> Unit = { link ->
+            emitted++
+            callback(link)
+        }
+        val emitSub: (SubtitleFile) -> Unit = { file ->
+            if (file.lang.contains("Arabic", true)) arabicAdded = true
+            subtitleCallback(file)
+        }
 
         for (def in defs) {
             val url = if (isTv) {
@@ -465,33 +495,242 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
                 buildMovieUrl(def, id, imdbId)
             } ?: continue
 
-            callback(
-                newExtractorLink(
-                    source = name,
-                    name = def.name,
-                    url = url,
-                    type = ExtractorLinkType.VIDEO,
-                ) {
-                    this.referer = "$mainUrl/"
-                    this.headers = mapOf(
-                        "Referer" to "$mainUrl/",
-                        "User-Agent" to BROWSER_UA,
-                    )
+            val before = emitted
+            try {
+                resolveServer(def, url, id, season, episode, emitSub, emit)
+            } catch (_: Exception) {
+                // dead or changed embed, just skip this server
+            }
+            if (emitted == before) {
+                try {
+                    loadExtractor(url, "$mainUrl/", emitSub, emit)
+                } catch (_: Exception) {
+                    // no registered extractor can play it
                 }
-            )
-            found = true
+            }
         }
 
-        val arabic = findArabicSubtitle(title, year, season, episode)
-        if (arabic != null) {
-            subtitleCallback(
-                SubtitleFile("Arabic", arabic).apply {
-                    this.headers = mapOf("User-Agent" to BROWSER_UA)
-                }
-            )
+        if (!arabicAdded) {
+            val arabic = findArabicSubtitle(title, year, season, episode)
+            if (arabic != null) {
+                subtitleCallback(
+                    SubtitleFile("Arabic", arabic).apply {
+                        this.headers = mapOf("User-Agent" to BROWSER_UA)
+                    }
+                )
+            }
         }
 
-        return found
+        return emitted > 0
+    }
+
+    private suspend fun resolveServer(
+        def: ServerDef,
+        url: String,
+        tmdbId: Int,
+        season: Int?,
+        episode: Int?,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit,
+    ) {
+        val host = hostOf(url)
+        when {
+            host.endsWith("vixsrc.to") ->
+                resolveVixsrc(url, def.name, callback)
+
+            host.endsWith("111movies.net") || host.endsWith("vidlove.cc") ->
+                resolveVidlove(tmdbId, season, episode, def.name, subtitleCallback, callback)
+
+            host.endsWith("modiplay.xyz") ->
+                resolveModiplay(url, subtitleCallback, callback)
+        }
+    }
+
+    private fun hostOf(url: String): String =
+        Regex("""^https?://([^/:?]+)""").find(url)?.groupValues?.get(1)?.lowercase() ?: ""
+
+    private fun originOf(url: String): String =
+        Regex("""^(https?://[^/]+)""").find(url)?.groupValues?.get(1) ?: ""
+
+    private fun embedHeaders(referer: String): Map<String, String> = mapOf(
+        "User-Agent" to BROWSER_UA,
+        "Accept" to "*/*",
+        "Referer" to referer,
+    )
+
+    /**
+     * vixsrc resolves the TMDB id through its own API, then the signed playlist
+     * URL out of the player page (the token/expires pair has to be appended).
+     */
+    private suspend fun resolveVixsrc(
+        pageUrl: String,
+        label: String,
+        callback: (ExtractorLink) -> Unit,
+    ) {
+        val origin = originOf(pageUrl)
+        if (origin.isBlank()) return
+
+        val tv = Regex("""/tv/(\d+)/(\d+)/(\d+)""").find(pageUrl)
+        val movie = Regex("""/movie/(\d+)""").find(pageUrl)
+        val apiPath = when {
+            tv != null -> "api/tv/${tv.groupValues[1]}/${tv.groupValues[2]}/${tv.groupValues[3]}"
+            movie != null -> "api/movie/${movie.groupValues[1]}"
+            else -> return
+        }
+
+        val apiText = try {
+            app.get("$origin/$apiPath", headers = embedHeaders(pageUrl)).text
+        } catch (_: Exception) {
+            return
+        }
+        val src = try {
+            JSONObject(apiText).optString("src").ifBlank { null }
+        } catch (_: Exception) {
+            null
+        } ?: return
+
+        val embedUrl = origin + src
+        val html = try {
+            app.get(embedUrl, headers = embedHeaders(pageUrl)).text
+        } catch (_: Exception) {
+            return
+        }
+
+        val streams = Regex("""window\.streams\s*=\s*(\[[\s\S]*?\])\s*;""").find(html)?.groupValues?.get(1)
+        val streamUrl = streams?.let {
+            Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(it)?.groupValues?.get(1)?.replace("\\/", "/")
+        }
+        val master = Regex("""window\.masterPlaylist\s*=\s*\{([\s\S]*?)\}\s*;""").find(html)?.groupValues?.get(1)
+        val token = master?.let { Regex("""['"]token['"]\s*:\s*['"]([^'"]+)['"]""").find(it)?.groupValues?.get(1) }
+        val expires = master?.let { Regex("""['"]expires['"]\s*:\s*['"]([^'"]+)['"]""").find(it)?.groupValues?.get(1) }
+        val masterUrl = master?.let { Regex("""\burl\s*:\s*['"]([^'"]+)['"]""").find(it)?.groupValues?.get(1) }
+
+        val base = streamUrl ?: masterUrl ?: return
+        if (token == null || expires == null) return
+
+        val params = mutableListOf("token=$token", "expires=$expires", "asn=")
+        if (Regex("""window\.canPlayFHD\s*=\s*true""").containsMatchIn(html)) params += "h=1"
+        val finalUrl = base + (if (base.contains("?")) "&" else "?") + params.joinToString("&")
+
+        callback(
+            newExtractorLink(
+                source = name,
+                name = label,
+                url = finalUrl,
+                type = ExtractorLinkType.M3U8,
+            ) {
+                this.referer = "$origin/"
+                this.headers = mapOf("Referer" to "$origin/", "User-Agent" to BROWSER_UA)
+            }
+        )
+    }
+
+    /**
+     * 111movies / vidlove exposes a JSON API whose `source.url` already is a
+     * valid master playlist, plus a subtitle endpoint per title.
+     */
+    private suspend fun resolveVidlove(
+        tmdbId: Int,
+        season: Int?,
+        episode: Int?,
+        label: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit,
+    ) {
+        val isTv = season != null && episode != null
+        val api = if (isTv) {
+            "$VIDLOVE_API/tv?id=$tmdbId&season=$season&episode=$episode&mode=json"
+        } else {
+            "$VIDLOVE_API/movie?id=$tmdbId&mode=json"
+        }
+
+        val json = try {
+            JSONObject(app.get(api, headers = embedHeaders(VIDLOVE_PLAYER)).text)
+        } catch (_: Exception) {
+            null
+        } ?: return
+
+        val source = json.optJSONObject("source") ?: return
+        val streamUrl = source.optString("url").ifBlank { null } ?: return
+        val serverLabel = source.optString("label").ifBlank { null }
+        val origin = originOf(VIDLOVE_PLAYER)
+
+        callback(
+            newExtractorLink(
+                source = name,
+                name = if (serverLabel == null) label else "$label - $serverLabel",
+                url = streamUrl,
+                type = ExtractorLinkType.M3U8,
+            ) {
+                this.referer = "$origin/"
+                this.headers = mapOf("Referer" to "$origin/", "User-Agent" to BROWSER_UA)
+            }
+        )
+
+        val arabic = arabicSubtitle(json.optJSONArray("subtitles")) ?: run {
+            val path = if (isTv) {
+                "subtitles/tv/$tmdbId/$season/$episode"
+            } else {
+                "subtitles/movie/$tmdbId"
+            }
+            val list = try {
+                JSONArray(app.get("$VIDLOVE_API/$path", headers = embedHeaders(VIDLOVE_PLAYER)).text)
+            } catch (_: Exception) {
+                null
+            }
+            arabicSubtitle(list)
+        }
+        if (arabic != null) subtitleCallback(arabic)
+    }
+
+    private fun arabicSubtitle(array: JSONArray?): SubtitleFile? {
+        if (array == null) return null
+        for (i in 0 until array.length()) {
+            val entry = array.optJSONObject(i) ?: continue
+            val label = entry.optString("label")
+            val url = entry.optString("file").ifBlank { null } ?: continue
+            if (label.contains("Arabic", true) || url.contains("Arabic", true)) {
+                return SubtitleFile("Arabic", url).apply {
+                    this.headers = mapOf("User-Agent" to BROWSER_UA, "Referer" to "$VIDLOVE_PLAYER/")
+                }
+            }
+        }
+        return null
+    }
+
+    /** Modplay lists its real hosts right in the page, hand them to the app extractors. */
+    private suspend fun resolveModiplay(
+        pageUrl: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit,
+    ) {
+        val html = try {
+            app.get(pageUrl, headers = embedHeaders(pageUrl)).text
+        } catch (_: Exception) {
+            return
+        }
+        val origin = originOf(pageUrl)
+        val servers = Regex("""https?://[^\s"'<>]+""")
+            .findAll(html)
+            .map { it.value.trimEnd(',', ';', ')', ']') }
+            .filter { server ->
+                val host = hostOf(server)
+                host.isNotBlank() &&
+                    host != hostOf(origin) &&
+                    !host.endsWith("tmdb.org") &&
+                    !host.endsWith("cloudflare.com") &&
+                    !server.contains("cdn-cgi")
+            }
+            .distinct()
+            .toList()
+
+        for (server in servers) {
+            try {
+                loadExtractor(server, pageUrl, subtitleCallback, callback)
+            } catch (_: Exception) {
+                continue
+            }
+        }
     }
 
     private fun buildMovieUrl(def: ServerDef, tmdbId: Int, imdbId: String?): String? {
