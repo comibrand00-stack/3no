@@ -5,6 +5,8 @@ import com.lagradost.cloudstream3.utils.*
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
@@ -45,6 +47,12 @@ class CineHD : MainAPI() {
         const val MAX_ROW_ITEMS = 24
         const val EPISODE_BATCH_SIZE = 6
         const val MAX_SEASONS = 30
+
+        const val NET_TIMEOUT_MS = 15_000L
+        const val RESOLVER_TIMEOUT_MS = 45_000L
+        const val EXTRACTOR_TIMEOUT_MS = 30_000L
+        const val ARABIC_TIMEOUT_MS = 20_000L
+        const val DIAG_TAG = "v19"
 
         const val MOVIE_SERVERS = """
 Max|https://ythd.org/embed/{id}|tmdb|id|
@@ -457,15 +465,20 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        var emitted = 0
+        val emitted = AtomicInteger(0)
         var arabicAdded = false
         var vixSt = "-"
         var vidSt = "-"
         var modSt = "-"
+        var dataProblem = ""
+        var crash = ""
 
+        val emitLock = Any()
         val emit: (ExtractorLink) -> Unit = { link ->
-            emitted++
-            callback(link)
+            synchronized(emitLock) {
+                emitted.incrementAndGet()
+                callback(link)
+            }
         }
         val emitSub: (SubtitleFile) -> Unit = { file ->
             if (file.lang.contains("Arabic", true)) arabicAdded = true
@@ -478,81 +491,89 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
             } catch (_: Exception) {
                 null
             }
-            val id = info?.optInt("i", 0)?.takeIf { it > 0 }
-            if (id == null) {
-                emit(diagLink("data=noid"))
-                return emitted > 0
-            }
+            val idRaw = info?.optInt("i", 0)?.takeIf { it > 0 }
             val kind = info?.optString("k")?.ifBlank { null } ?: "movie"
             val title = info?.optString("t")?.ifBlank { null }
             val year = info?.optInt("y", 0)?.takeIf { it > 0 }
             val season = info?.optInt("s", 0)?.takeIf { it > 0 }
             val episode = info?.optInt("e", 0)?.takeIf { it > 0 }
             val imdbId = info?.optString("imdb")?.ifBlank { null }
-
             val isTv = kind == "tv"
-            if (isTv && (season == null || episode == null)) {
-                emit(diagLink("data=nos"))
-                return emitted > 0
-            }
 
-            val defs = if (isTv) tvServers else movieServers
+            if (idRaw == null) {
+                dataProblem = "data=noid"
+            } else if (isTv && (season == null || episode == null)) {
+                dataProblem = "data=nos"
+            } else {
+                val tmdbId = idRaw
+                val s = season
+                val e = episode
+                val defs = if (isTv) tvServers else movieServers
 
-            for (def in defs) {
-                val url = if (isTv) {
-                    buildTvUrl(def, id, season!!, episode!!)
-                } else {
-                    buildMovieUrl(def, id, imdbId)
-                } ?: continue
-                if (!isResolvedHost(url)) continue
+                // every resolver runs in parallel so one slow host cannot stall the rest
+                coroutineScope {
+                    val jobs = defs.mapNotNull { def ->
+                        val url = if (isTv) {
+                            buildTvUrl(def, tmdbId, s!!, e!!)
+                        } else {
+                            buildMovieUrl(def, tmdbId, imdbId)
+                        } ?: return@mapNotNull null
+                        if (!isResolvedHost(url)) return@mapNotNull null
 
-                val before = emitted
-                val status = try {
-                    resolveServer(def, url, id, season, episode, emitSub, emit) ?: continue
-                } catch (t: Throwable) {
-                    "x:" + shortError(t)
+                        async {
+                            val before = emitted.get()
+                            val status = try {
+                                withTimeoutOrNull(RESOLVER_TIMEOUT_MS) {
+                                    resolveServer(def, url, tmdbId, s, e, emitSub, emit)
+                                } ?: "x:TO"
+                            } catch (t: Throwable) {
+                                "x:" + shortError(t)
+                            }
+                            val st = when {
+                                emitted.get() > before -> "ok"
+                                status == "ok" -> "e:none"
+                                else -> status
+                            }
+                            hostOf(url) to st
+                        }
+                    }
+                    val results = jobs.awaitAll()
+                    for ((host, st) in results) {
+                        when {
+                            host.endsWith("vixsrc.to") -> vixSt = st
+                            host.endsWith("111movies.net") || host.endsWith("vidlove.cc") -> vidSt = st
+                            host.endsWith("modiplay.xyz") -> modSt = st
+                        }
+                    }
                 }
-                val st = when {
-                    emitted > before -> "ok"
-                    status == "ok" -> "e:none"
-                    else -> status
-                }
-                val host = hostOf(url)
-                when {
-                    host.endsWith("vixsrc.to") -> vixSt = st
-                    host.endsWith("111movies.net") || host.endsWith("vidlove.cc") -> vidSt = st
-                    host.endsWith("modiplay.xyz") -> modSt = st
-                }
-            }
 
-            for (def in defs) {
-                val url = if (isTv) {
-                    buildTvUrl(def, id, season!!, episode!!)
-                } else {
-                    buildMovieUrl(def, id, imdbId)
-                } ?: continue
-                if (isResolvedHost(url)) continue
+                coroutineScope {
+                    val jobs = defs.mapNotNull { def ->
+                        val url = if (isTv) {
+                            buildTvUrl(def, tmdbId, s!!, e!!)
+                        } else {
+                            buildMovieUrl(def, tmdbId, imdbId)
+                        } ?: return@mapNotNull null
+                        if (isResolvedHost(url)) return@mapNotNull null
 
-                try {
-                    loadExtractor(url, "$mainUrl/", emitSub, emit)
-                } catch (t: Throwable) {
-                    // no registered extractor can play it
+                        async {
+                            try {
+                                withTimeoutOrNull(EXTRACTOR_TIMEOUT_MS) {
+                                    loadExtractor(url, "$mainUrl/", emitSub, emit)
+                                }
+                            } catch (t: Throwable) {
+                                // no registered extractor can play it
+                            }
+                        }
+                    }
+                    jobs.awaitAll()
                 }
-            }
-
-            val broken = listOf("vix" to vixSt, "vid" to vidSt, "mod" to modSt)
-                .filter { it.second != "ok" }
-            if (emitted == 0 || broken.isNotEmpty()) {
-                val label = if (broken.isEmpty()) {
-                    "none"
-                } else {
-                    broken.joinToString(" ") { "${it.first}=${it.second}" }
-                }
-                emit(diagLink(label))
             }
 
             if (!arabicAdded) {
-                val arabic = findArabicSubtitle(title, year, season, episode)
+                val arabic = withTimeoutOrNull(ARABIC_TIMEOUT_MS) {
+                    findArabicSubtitle(title, year, season, episode)
+                }
                 if (arabic != null) {
                     subtitleCallback(
                         SubtitleFile("Arabic", arabic).apply {
@@ -562,10 +583,26 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
                 }
             }
         } catch (t: Throwable) {
-            // never let a resolver crash the player
+            crash = shortError(t)
         }
 
-        return emitted > 0
+        // emitted outside the try so no crash can hide it from the player
+        try {
+            val parts = mutableListOf<String>()
+            if (dataProblem.isNotEmpty()) parts += dataProblem
+            if (crash.isNotEmpty()) parts += "crash=$crash"
+            if (dataProblem.isEmpty()) {
+                for ((key, value) in listOf("vix" to vixSt, "vid" to vidSt, "mod" to modSt)) {
+                    if (value != "ok") parts += "$key=$value"
+                }
+            }
+            if (parts.isEmpty() && emitted.get() == 0) parts += "none"
+            if (parts.isNotEmpty()) emit(diagLink(parts.joinToString(" ")))
+        } catch (t: Throwable) {
+            // diagnostics themselves failed, nothing else we can do
+        }
+
+        return emitted.get() > 0
     }
 
     private fun shortError(e: Throwable): String {
@@ -590,7 +627,7 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
     private suspend fun diagLink(label: String): ExtractorLink =
         newExtractorLink(
             source = name,
-            name = "DIAG $label",
+            name = "DIAG $DIAG_TAG $label",
             url = "$mainUrl/",
             type = ExtractorLinkType.VIDEO,
         ) {
@@ -642,15 +679,11 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
     )
 
     private suspend fun fetchText(url: String, referer: String): String {
-        var error: Exception? = null
-        repeat(2) {
-            try {
-                return app.get(url, headers = embedHeaders(referer)).text
-            } catch (e: Exception) {
-                error = e
-            }
+        val text = withTimeoutOrNull(NET_TIMEOUT_MS) {
+            app.get(url, headers = embedHeaders(referer)).text
         }
-        throw error ?: IllegalStateException("no response")
+        if (text == null) throw java.net.SocketTimeoutException("net timeout")
+        return text
     }
 
     /**
@@ -841,8 +874,10 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
 
         for (server in servers) {
             try {
-                loadExtractor(server, pageUrl, subtitleCallback, callback)
-            } catch (_: Exception) {
+                withTimeoutOrNull(EXTRACTOR_TIMEOUT_MS) {
+                    loadExtractor(server, pageUrl, subtitleCallback, callback)
+                }
+            } catch (t: Throwable) {
                 continue
             }
         }
