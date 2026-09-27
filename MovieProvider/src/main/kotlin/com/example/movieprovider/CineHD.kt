@@ -1,4 +1,4 @@
-package com.example.movieprovider
+﻿package com.example.movieprovider
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
@@ -476,6 +476,9 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         val defs = if (isTv) tvServers else movieServers
         var emitted = 0
         var arabicAdded = false
+        var vixSt = "-"
+        var vidSt = "-"
+        var modSt = "-"
 
         val emit: (ExtractorLink) -> Unit = { link ->
             emitted++
@@ -492,20 +495,57 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
             } else {
                 buildMovieUrl(def, id, imdbId)
             } ?: continue
+            if (!isResolvedHost(url)) continue
 
             val before = emitted
+            val status = try {
+                resolveServer(def, url, id, season, episode, emitSub, emit) ?: continue
+            } catch (e: Exception) {
+                "x:" + shortError(e)
+            }
+            val st = if (emitted > before) {
+                "ok"
+            } else if (status == "ok") {
+                "e:none"
+            } else {
+                status
+            }
+            val host = hostOf(url)
+            when {
+                host.endsWith("vixsrc.to") -> vixSt = st
+                host.endsWith("111movies.net") || host.endsWith("vidlove.cc") -> vidSt = st
+                host.endsWith("modiplay.xyz") -> modSt = st
+            }
+        }
+
+        for (def in defs) {
+            val url = if (isTv) {
+                buildTvUrl(def, id, season!!, episode!!)
+            } else {
+                buildMovieUrl(def, id, imdbId)
+            } ?: continue
+            if (isResolvedHost(url)) continue
+
             try {
-                resolveServer(def, url, id, season, episode, emitSub, emit)
+                loadExtractor(url, "$mainUrl/", emitSub, emit)
             } catch (_: Exception) {
-                // dead or changed embed, just skip this server
+                // no registered extractor can play it
             }
-            if (emitted == before) {
-                try {
-                    loadExtractor(url, "$mainUrl/", emitSub, emit)
-                } catch (_: Exception) {
-                    // no registered extractor can play it
+        }
+
+        val broken = listOf("vix" to vixSt, "vid" to vidSt, "mod" to modSt)
+            .filter { it.second != "-" && it.second != "ok" }
+        if (broken.isNotEmpty()) {
+            callback(
+                newExtractorLink(
+                    source = name,
+                    name = "DIAG " + broken.joinToString(" ") { "${it.first}=${it.second}" },
+                    url = "$mainUrl/",
+                    type = ExtractorLinkType.VIDEO,
+                ) {
+                    this.referer = "$mainUrl/"
                 }
-            }
+            )
         }
 
         if (!arabicAdded) {
@@ -522,6 +562,28 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         return emitted > 0
     }
 
+    private fun shortError(e: Throwable): String {
+        val n = e::class.java.simpleName
+        return when {
+            n.contains("Cloudflare", true) -> "CF"
+            n.contains("Timeout", true) || n.contains("Interrupted", true) -> "TO"
+            n.contains("UnknownHost", true) -> "DNS"
+            n.contains("SSL", true) || n.contains("Certificate", true) -> "SSL"
+            n.contains("Connect", true) -> "CN"
+            n.contains("Json", true) -> "JS"
+            n.contains("Http", true) -> "HTTP"
+            else -> n.take(9).ifBlank { "?" }
+        }
+    }
+
+    private fun isResolvedHost(url: String): Boolean {
+        val host = hostOf(url)
+        return host.endsWith("vixsrc.to") ||
+            host.endsWith("111movies.net") ||
+            host.endsWith("vidlove.cc") ||
+            host.endsWith("modiplay.xyz")
+    }
+
     private suspend fun resolveServer(
         def: ServerDef,
         url: String,
@@ -530,9 +592,9 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         episode: Int?,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit,
-    ) {
+    ): String? {
         val host = hostOf(url)
-        when {
+        return when {
             host.endsWith("vixsrc.to") ->
                 resolveVixsrc(url, def.name, callback)
 
@@ -541,6 +603,8 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
 
             host.endsWith("modiplay.xyz") ->
                 resolveModiplay(url, subtitleCallback, callback)
+
+            else -> null
         }
     }
 
@@ -550,11 +614,28 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
     private fun originOf(url: String): String =
         Regex("""^(https?://[^/]+)""").find(url)?.groupValues?.get(1) ?: ""
 
-    private fun embedHeaders(referer: String): Map<String, String> = mapOf(
-        "User-Agent" to BROWSER_UA,
-        "Accept" to "*/*",
-        "Referer" to referer,
-    )
+    private fun embedHeaders(referer: String): Map<String, String> {
+        val origin = originOf(referer)
+        return buildMap {
+            put("User-Agent", BROWSER_UA)
+            put("Accept", "*/*")
+            put("Accept-Language", "en-US,en;q=0.9,ar;q=0.8")
+            put("Referer", referer)
+            if (origin.isNotBlank()) put("Origin", origin)
+        }
+    }
+
+    private suspend fun fetchText(url: String, referer: String): String {
+        var error: Exception? = null
+        repeat(2) {
+            try {
+                return app.get(url, headers = embedHeaders(referer)).text
+            } catch (e: Exception) {
+                error = e
+            }
+        }
+        throw error ?: IllegalStateException("no response")
+    }
 
     /**
      * vixsrc resolves the TMDB id through its own API, then the signed playlist
@@ -564,35 +645,37 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         pageUrl: String,
         label: String,
         callback: (ExtractorLink) -> Unit,
-    ) {
+    ): String {
         val origin = originOf(pageUrl)
-        if (origin.isBlank()) return
+        if (origin.isBlank()) return "x:url"
 
         val tv = Regex("""/tv/(\d+)/(\d+)/(\d+)""").find(pageUrl)
         val movie = Regex("""/movie/(\d+)""").find(pageUrl)
         val apiPath = when {
             tv != null -> "api/tv/${tv.groupValues[1]}/${tv.groupValues[2]}/${tv.groupValues[3]}"
             movie != null -> "api/movie/${movie.groupValues[1]}"
-            else -> return
+            else -> return "x:url"
         }
 
         val apiText = try {
-            app.get("$origin/$apiPath", headers = embedHeaders(pageUrl)).text
-        } catch (_: Exception) {
-            return
+            fetchText("$origin/$apiPath", pageUrl)
+        } catch (e: Exception) {
+            return "x:" + shortError(e)
         }
+        if (apiText.isBlank()) return "e:empty"
         val src = try {
             JSONObject(apiText).optString("src").ifBlank { null }
-        } catch (_: Exception) {
-            null
-        } ?: return
+        } catch (e: Exception) {
+            return if (apiText.trimStart().startsWith("<")) "h:html" else "j:" + shortError(e)
+        } ?: return "j:nosrc"
 
         val embedUrl = origin + src
         val html = try {
-            app.get(embedUrl, headers = embedHeaders(pageUrl)).text
-        } catch (_: Exception) {
-            return
+            fetchText(embedUrl, pageUrl)
+        } catch (e: Exception) {
+            return "p:" + shortError(e)
         }
+        if (html.isBlank()) return "p:empty"
 
         val streams = Regex("""window\.streams\s*=\s*(\[[\s\S]*?\])\s*;""").find(html)?.groupValues?.get(1)
         val streamUrl = streams?.let {
@@ -603,9 +686,10 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         val expires = master?.let { Regex("""['"]expires['"]\s*:\s*['"]([^'"]+)['"]""").find(it)?.groupValues?.get(1) }
         val masterUrl = master?.let { Regex("""\burl\s*:\s*['"]([^'"]+)['"]""").find(it)?.groupValues?.get(1) }
 
-        val base = streamUrl ?: masterUrl ?: return
-        if (token == null || expires == null) return
+        if (streamUrl == null && masterUrl == null) return "m:none"
+        if (token == null || expires == null) return "t:missing"
 
+        val base = streamUrl ?: masterUrl!!
         val params = mutableListOf("token=$token", "expires=$expires", "asn=")
         if (Regex("""window\.canPlayFHD\s*=\s*true""").containsMatchIn(html)) params += "h=1"
         val finalUrl = base + (if (base.contains("?")) "&" else "?") + params.joinToString("&")
@@ -621,6 +705,7 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
                 this.headers = mapOf("Referer" to "$origin/", "User-Agent" to BROWSER_UA)
             }
         )
+        return "ok"
     }
 
     /**
@@ -634,7 +719,7 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         label: String,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit,
-    ) {
+    ): String {
         val isTv = season != null && episode != null
         val api = if (isTv) {
             "$VIDLOVE_API/tv?id=$tmdbId&season=$season&episode=$episode&mode=json"
@@ -642,15 +727,26 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
             "$VIDLOVE_API/movie?id=$tmdbId&mode=json"
         }
 
+        val body = try {
+            fetchText(api, "$VIDLOVE_PLAYER/")
+        } catch (e: Exception) {
+            return "x:" + shortError(e)
+        }
+        if (body.isBlank()) return "e:empty"
         val json = try {
-            JSONObject(app.get(api, headers = embedHeaders(VIDLOVE_PLAYER)).text)
-        } catch (_: Exception) {
-            null
-        } ?: return
+            JSONObject(body)
+        } catch (e: Exception) {
+            return if (body.trimStart().startsWith("<")) "h:html" else "j:" + shortError(e)
+        }
 
-        val source = json.optJSONObject("source") ?: return
-        val streamUrl = source.optString("url").ifBlank { null } ?: return
-        val serverLabel = source.optString("label").ifBlank { null }
+        val source = json.optJSONObject("source")
+        val streamUrl = source?.optString("url")?.ifBlank { null }
+            ?: json.optString("manifest").ifBlank { null }?.let { manifest ->
+                manifest.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("#") }?.trim()
+            }
+        if (streamUrl == null) return "j:nosrc"
+
+        val serverLabel = source?.optString("label")?.ifBlank { null }
         val origin = originOf(VIDLOVE_PLAYER)
 
         callback(
@@ -672,13 +768,15 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
                 "subtitles/movie/$tmdbId"
             }
             val list = try {
-                JSONArray(app.get("$VIDLOVE_API/$path", headers = embedHeaders(VIDLOVE_PLAYER)).text)
+                JSONArray(fetchText("$VIDLOVE_API/$path", "$VIDLOVE_PLAYER/"))
             } catch (_: Exception) {
                 null
             }
             arabicSubtitle(list)
         }
         if (arabic != null) subtitleCallback(arabic)
+
+        return "ok"
     }
 
     private fun arabicSubtitle(array: JSONArray?): SubtitleFile? {
@@ -701,12 +799,13 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         pageUrl: String,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit,
-    ) {
+    ): String {
         val html = try {
-            app.get(pageUrl, headers = embedHeaders(pageUrl)).text
-        } catch (_: Exception) {
-            return
+            fetchText(pageUrl, pageUrl)
+        } catch (e: Exception) {
+            return "x:" + shortError(e)
         }
+        if (html.isBlank()) return "e:empty"
         val origin = originOf(pageUrl)
         val servers = Regex("""https?://[^\s"'<>]+""")
             .findAll(html)
@@ -722,6 +821,8 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
             .distinct()
             .toList()
 
+        if (servers.isEmpty()) return "r:none"
+
         for (server in servers) {
             try {
                 loadExtractor(server, pageUrl, subtitleCallback, callback)
@@ -729,6 +830,7 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
                 continue
             }
         }
+        return "ok"
     }
 
     private fun buildMovieUrl(def: ServerDef, tmdbId: Int, imdbId: String?): String? {
