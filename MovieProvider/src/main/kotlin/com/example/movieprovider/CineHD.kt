@@ -157,14 +157,12 @@ Peachify|https://peachify.top/embed/tv/|tmdb|id/season/episode?autoplay=true&sub
         "Spain" to "ES",
         "Turkey" to "TR",
         "South Korea" to "KR",
-        "Japan" to "JP",
         "Germany" to "DE",
         "Italy" to "IT",
-        "Brazil" to "BR",
         "India" to "IN",
         "Egypt" to "EG",
-        "Mexico" to "MX",
-        "Nigeria" to "NG",
+        "Afghanistan" to "AF",
+        "Iran" to "IR",
     ).flatMap { (label, code) ->
         listOf(
             "Movies ($label)" to "type=movie&country=$code",
