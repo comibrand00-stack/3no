@@ -1,4 +1,4 @@
-﻿version = 23
+﻿version = 24
 
 cloudstream {
     description = "قصة عشق (Qesset), BingeBang and PressPlayz - movies, series and live tv providers"

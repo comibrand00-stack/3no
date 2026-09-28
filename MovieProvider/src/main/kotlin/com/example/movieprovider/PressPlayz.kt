@@ -28,12 +28,16 @@ class PressPlayz : MainAPI() {
         const val MAX_SEARCH_ITEMS = 50
         const val SERVER_TIMEOUT_MS = 25_000L
 
-        // channel entries embedded in the /live-tv page (HTML-escaped JSON island):
-        // &quot;id&quot;:[0,609],&quot;name&quot;:[0,&quot;...&quot;],
-        // &quot;logo&quot;:[0,&quot;...&quot;],&quot;categories&quot;:[1,[[0,&quot;sports&quot;]]]
-        val ENTRY_RX = Regex(
-            """&quot;id&quot;:\[0,(\d+)\],&quot;name&quot;:\[0,&quot;(.*?)&quot;\],&quot;logo&quot;:\[0,&quot;(.*?)&quot;\],&quot;categories&quot;:(.*?)]}],[0,"""
-        )
+        // channel entries embedded in the /live-tv page (HTML-escaped JSON island).
+        // Channels: {"id":[0,609],"name":[0,"..."],"logo":[0,"..."],"categories":[1,[[0,"sports"]]]}
+        // Genre lookalikes have id+name only (no logo) and are skipped.
+        // Parsed head-first with small windows to avoid runaway backtracking.
+        val HEAD_RX = Regex("""&quot;id&quot;:\[0,(\d+)\]""")
+        val NAME_RX = Regex("""&quot;name&quot;:\[0,&quot;(.{0,150}?)&quot;""")
+        val LOGO_RX = Regex("""&quot;logo&quot;:\[0,&quot;(.{0,500}?)&quot;""")
+        const val HEAD_MARKER = "&quot;id&quot;"
+        const val LOGO_MARKER = "&quot;logo&quot;:"
+        const val CAT_MARKER = "&quot;categories&quot;:"
         val SERVER_RX = Regex("""data-url="([^"]+)"[^>]*>\s*([^<>]+?)\s*<""")
         val IFRAME_RX = Regex("""<iframe[^>]+src="(https?://[^"]+)"""")
         val SRC_RX = Regex("""const SRC\s*=\s*"([^"]+)"""")
@@ -95,12 +99,26 @@ class PressPlayz : MainAPI() {
         }
         val seen = mutableSetOf<String>()
         val out = mutableListOf<Channel>()
-        for (m in ENTRY_RX.findAll(html)) {
-            val id = m.groupValues[1]
+        for (head in HEAD_RX.findAll(html)) {
+            val id = head.groupValues[1]
             if (!seen.add(id)) continue
-            val name = unescape(m.groupValues[2]).trim().ifBlank { continue }
-            val logo = unescape(m.groupValues[3]).trim().ifBlank { null }
-            val isSports = m.groupValues[4].contains("sport", true)
+            // bound the window to this entry so fields can't leak from the next one
+            val headEnd = head.range.last + 1
+            val nextHead = html.indexOf(HEAD_MARKER, headEnd).takeIf { it >= 0 } ?: html.length
+            val windowEnd = minOf(nextHead, head.range.first + 1200)
+            if (windowEnd <= headEnd) continue
+            val window = html.substring(head.range.first, windowEnd)
+            val name = NAME_RX.find(window)?.groupValues?.get(1)
+                ?.let { unescape(it).trim() }
+            if (name.isNullOrBlank()) continue
+            // logo field required: genre lookalikes (id+name only) are skipped here
+            if (!window.contains(LOGO_MARKER)) continue
+            val logo = LOGO_RX.find(window)?.groupValues?.get(1)
+                ?.let { unescape(it).trim() }.takeIf { !it.isNullOrBlank() }
+            val catIndex = window.indexOf(CAT_MARKER)
+            val isSports = catIndex >= 0 &&
+                window.substring(catIndex, minOf(catIndex + 400, window.length))
+                    .contains("sport", true)
             out += Channel(id, name, logo, isSports)
         }
         return out
