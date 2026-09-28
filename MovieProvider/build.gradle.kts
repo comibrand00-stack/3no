@@ -1,9 +1,9 @@
-﻿version = 19
+﻿version = 20
 
 cloudstream {
-    description = "TopCinema, Qesset, Reelix, BingeBang and CineHD - movies, series and anime providers"
+    description = "قصة عشق (Qesset) - movies and series provider"
     authors = listOf("comibrand00-stack")
     status = 1
-    tvTypes = listOf("Movie", "TvSeries", "Anime")
+    tvTypes = listOf("Movie", "TvSeries")
     language = "ar"
 }

@@ -7,10 +7,6 @@ import com.lagradost.cloudstream3.plugins.Plugin
 @CloudstreamPlugin
 class MoviePlugin : Plugin() {
     override fun load(context: Context) {
-        registerMainAPI(TopCinema())
         registerMainAPI(Qesset())
-        registerMainAPI(Reelix())
-        registerMainAPI(BingeBang())
-        registerMainAPI(CineHD())
     }
 }

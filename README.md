@@ -1,27 +1,27 @@
 # MovieProvider Repository
 
-A CloudStream 3 plugin repository containing an Arabic movie/series/anime provider for **TopCinema** (توب سينما).
+A CloudStream 3 plugin repository containing a single Arabic movie/series provider for **قصة عشق (Qesset)**.
 
 ## Overview
 
-This repository provides a provider extension for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `TopCinema` provider scrapes content from `topcinema.fan`.
+This repository provides a provider extension for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` provider scrapes content from `qesset.com`.
 
 ## Features
 
-- **Homepage sections**: Slider, latest episodes, movies, anime, Asian series, Netflix picks
-- **Search**: Search movies, series and anime by title
-- **Movie details**: Poster, IMDb rating, year, genres, plot, cast, quality
-- **Series/Anime**: Season and episode lists
-- **Streaming links**: Multi-server watch page resolution (VideoTube, Doodstream, Streamtape, Mixdrop, etc.)
+- **Homepage sections**: Latest episodes, series, movies, new movies
+- **Search**: Search movies and series by title
+- **Details**: Poster, year, plot for movies and series
+- **Series**: Season/episode lists collected across paginated series pages
+- **Streaming links**: Decodes the watch-page server list and resolves embeds (Arab HD, estream, dailymotion, ok.ru, Red HD, Pro HD, box, now, facebook, youtube, express, …) plus direct `.m3u8` / `.mp4` extraction
 - **Download support**: Download page links when available
 - **Chromecast**: Supported
 
-## Provider: TopCinema
+## Provider: Qesset
 
 | Property | Value |
 |----------|-------|
-| **Name** | TopCinema |
-| **Supported Types** | Movie, TvSeries, Anime |
+| **Name** | قصة عشق (Qesset) |
+| **Supported Types** | Movie, TvSeries |
 | **Language** | Arabic (`ar`) |
 | **Status** | Active |
 | **Chromecast** | Yes |
@@ -29,10 +29,10 @@ This repository provides a provider extension for [CloudStream](https://github.c
 
 ### Methods
 
-- `getMainPage()` - Homepage sections from topcinema.fan
-- `search(query)` - Search via `/search/?query=&type=all`
-- `load(url)` - Movie/series details including seasons and episodes
-- `loadLinks(data)` - Resolves watch-page servers via `Single/Server.php` AJAX and extracts embeds
+- `getMainPage()` - Homepage sections from `qesset.com` (`/son-bolumler/`, `/discover/`, `/movies/`, `/category/yeni-filmler/`)
+- `search(query)` - Search via `/?s=<query>`
+- `load(url)` - Movie/series details including paginated season/episode lists
+- `loadLinks(data)` - Decodes the Base64 server list from the watch page and resolves embeds
 
 ## Installation
 
@@ -44,7 +44,7 @@ This repository provides a provider extension for [CloudStream](https://github.c
    ```
    https://raw.githubusercontent.com/comibrand00-stack/MovieProviderRepo/master/repo.json
    ```
-4. The **TopCinema** provider will appear in the provider list
+4. The **قصة عشق (Qesset)** provider will appear in the provider list
 
 ### Build from Source
 
@@ -72,7 +72,7 @@ MovieProviderRepo/
 │       ├── AndroidManifest.xml   # Android manifest
 │       └── kotlin/com/example/movieprovider/
 │           ├── MoviePlugin.kt    # Plugin entry point
-│           └── MovieProvider.kt  # TopCinema MainAPI implementation
+│           └── Qesset.kt         # Qesset MainAPI implementation
 ├── build.gradle.kts              # Root build configuration
 ├── settings.gradle.kts           # Project settings
 ├── repo.json                     # Repository manifest
@@ -81,10 +81,11 @@ MovieProviderRepo/
 
 ### Site Integration Notes
 
-- Watch page servers: POST `{theme}/Ajaxat/Single/Server.php` with `id=<post_id>&i=<server_index>`
-- Search: GET `/search/?query=<q>&type=all|movies|series`
-- Series pages: `/series/<slug>/` with `section.allepcont` episodes and `section.allseasonss` seasons
-- Episode/movie pages: title prefix (`فيلم` / `مسلسل` / `انمي`) determines type
+- Homepage: `/son-bolumler/` (latest episodes), `/discover/` (series), `/movies/` (movies), `/category/yeni-filmler/` (new movies)
+- Search: GET `/?s=<query>`
+- Cards: `article` blocks whose link points to `/movies/`, `/yeni-show/`, `/clarus/` or `/tvshow/`
+- Series pages: `a[href*=/clarus/]` episode links with `episode-<n>` in the URL, `link[rel=next]` for pagination (max 10 pages)
+- Watch page: the `a[href*=qesen]` link carries a Base64 `post=` value that decodes to a JSON server list of `{"name":…,"id":…}` pairs
 
 ## License
 
