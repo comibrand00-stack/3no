@@ -7,6 +7,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
+import java.util.Base64
 
 class PressPlayz : MainAPI() {
     override var mainUrl = "https://pressplayz.to"
@@ -42,6 +43,8 @@ class PressPlayz : MainAPI() {
         val IFRAME_RX = Regex("""<iframe[^>]+src="(https?://[^"]+)"""")
         val SRC_RX = Regex("""const SRC\s*=\s*"([^"]+)"""")
         val FILE_RX = Regex(""""(?:file|source)"\s*:\s*"(https?://[^"]+)"""")
+        val ATOB_RX = Regex("""window\.atob\(['"]([A-Za-z0-9+/=]{40,})['"]\)""")
+        val ID_RX = Regex("""/live-tv/(\d+)""")
         val M3U8_RX = Regex("""https?://[^\s"'<>\\]+\.m3u8(?:[^\s"'<>\\]*)?""")
         val ORIGIN_RX = Regex("""^(https?://[^/]+)""")
         val H1_RX = Regex("""<h1[^>]*>(.*?)</h1>""", RegexOption.DOT_MATCHES_ALL)
@@ -185,19 +188,47 @@ class PressPlayz : MainAPI() {
             .filter { (serverUrl, label) -> serverUrl.startsWith("http") && label.isNotBlank() }
             .distinctBy { it.first }
             .toList()
-        if (servers.isEmpty()) return false
+        val channelId = ID_RX.find(pageUrl)?.groupValues?.get(1)
+        if (servers.isEmpty() && channelId == null) return false
 
         val seen = mutableSetOf<String>()
         val results = coroutineScope {
-            servers.map { (serverUrl, label) ->
+            val jobs = mutableListOf(
+                async {
+                    // fast path: daddy backend directly (same page "Player 1" embeds),
+                    // bypasses the heavy dlive.sx pages entirely
+                    if (channelId != null) {
+                        withTimeoutOrNull(SERVER_TIMEOUT_MS) {
+                            resolveDirectBackend(channelId, pageUrl, callback, seen)
+                        } ?: false
+                    } else false
+                }
+            )
+            servers.mapTo(jobs) { (serverUrl, label) ->
                 async {
                     withTimeoutOrNull(SERVER_TIMEOUT_MS) {
                         resolveServer(serverUrl, label, pageUrl, subtitleCallback, callback, seen)
                     } ?: false
                 }
-            }.awaitAll()
+            }
+            jobs.awaitAll()
         }
         return results.any { it }
+    }
+
+    private suspend fun resolveDirectBackend(
+        channelId: String,
+        pageReferer: String,
+        callback: (ExtractorLink) -> Unit,
+        seen: MutableSet<String>,
+    ): Boolean {
+        val backend = "https://daddyliveplayer.st/premiumtv/daddy.php?id=$channelId"
+        val html = try {
+            app.get(backend, headers = pageHeaders(pageReferer)).text
+        } catch (_: Exception) {
+            return false
+        }
+        return emitStreams(html, "Direct", backend, callback, seen)
     }
 
     private suspend fun resolveServer(
@@ -265,6 +296,14 @@ class PressPlayz : MainAPI() {
         val found = linkedSetOf<String>()
         SRC_RX.find(html)?.groupValues?.get(1)?.let { found += it }
         FILE_RX.findAll(html).forEach { found += it.groupValues[1] }
+        ATOB_RX.findAll(html).forEach { m ->
+            val decoded = try {
+                String(Base64.getMimeDecoder().decode(m.groupValues[1]), Charsets.UTF_8).trim()
+            } catch (_: Exception) {
+                null
+            }
+            if (decoded != null && decoded.startsWith("http")) found += decoded
+        }
         M3U8_RX.findAll(html).forEach { found += it.value }
         if (found.isEmpty()) return false
 
