@@ -42,7 +42,7 @@ This repository provides a provider extension for [CloudStream](https://github.c
 2. Go to **Settings** > **Extensions** > **Install from URL**
 3. Enter the repository URL:
    ```
-   https://raw.githubusercontent.com/comibrand00-stack/MovieProviderRepo/master/repo.json
+   https://raw.githubusercontent.com/comibrand00-stack/3no/master/repo.json
    ```
 4. The **قصة عشق (Qesset)** provider will appear in the provider list
 
@@ -50,7 +50,7 @@ This repository provides a provider extension for [CloudStream](https://github.c
 
 ```bash
 # Clone the repository
-git clone https://github.com/comibrand00-stack/MovieProviderRepo.git
+git clone https://github.com/comibrand00-stack/3no.git
 cd MovieProviderRepo
 
 # Build the provider
@@ -59,33 +59,6 @@ cd MovieProviderRepo
 # Deploy to device (requires ADB)
 ./gradlew :MovieProvider:deployWithAdb
 ```
-
-## Development
-
-### Project Structure
-
-```
-MovieProviderRepo/
-├── MovieProvider/
-│   ├── build.gradle.kts          # Provider build configuration
-│   └── src/main/
-│       ├── AndroidManifest.xml   # Android manifest
-│       └── kotlin/com/example/movieprovider/
-│           ├── MoviePlugin.kt    # Plugin entry point
-│           └── Qesset.kt         # Qesset MainAPI implementation
-├── build.gradle.kts              # Root build configuration
-├── settings.gradle.kts           # Project settings
-├── repo.json                     # Repository manifest
-└── .github/workflows/build.yml   # CI/CD pipeline
-```
-
-### Site Integration Notes
-
-- Homepage: `/son-bolumler/` (latest episodes), `/discover/` (series), `/movies/` (movies), `/category/yeni-filmler/` (new movies)
-- Search: GET `/?s=<query>`
-- Cards: `article` blocks whose link points to `/movies/`, `/yeni-show/`, `/clarus/` or `/tvshow/`
-- Series pages: `a[href*=/clarus/]` episode links with `episode-<n>` in the URL, `link[rel=next]` for pagination (max 10 pages)
-- Watch page: the `a[href*=qesen]` link carries a Base64 `post=` value that decodes to a JSON server list of `{"name":…,"id":…}` pairs
 
 ## License
 
@@ -100,3 +73,4 @@ This project is for educational purposes only. Streaming copyrighted content wit
 - [CloudStream](https://github.com/recloudstream/cloudstream) - The streaming platform
 - [NiceHttp](https://github.com/Blatzar/NiceHttp) - HTTP library
 - [Jsoup](https://jsoup.org/) - HTML parsing library
+  
