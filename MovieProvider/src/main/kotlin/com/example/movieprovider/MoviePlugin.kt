@@ -9,5 +9,6 @@ class MoviePlugin : Plugin() {
     override fun load(context: Context) {
         registerMainAPI(Qesset())
         registerMainAPI(BingeBang())
+        registerMainAPI(PressPlayz())
     }
 }
