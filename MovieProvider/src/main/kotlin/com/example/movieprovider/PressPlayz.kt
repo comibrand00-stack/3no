@@ -311,7 +311,8 @@ class PressPlayz : MainAPI() {
         var emitted = false
         for (streamUrl in found) {
             if (!streamUrl.startsWith("http")) continue
-            val isNew = synchronized(seen) { seen.add(streamUrl) }
+            // dedupe per server label so every resolving server gets its own entry
+            val isNew = synchronized(seen) { seen.add("$label|$streamUrl") }
             if (!isNew) continue
             val isHls = streamUrl.contains(".m3u8", true)
             callback(
