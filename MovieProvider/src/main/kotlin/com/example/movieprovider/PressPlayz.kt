@@ -243,15 +243,19 @@ class PressPlayz : MainAPI() {
         val level1 = try {
             app.get(serverUrl, headers = pageHeaders(pageReferer)).text
         } catch (_: Exception) {
-            return false
+            // server page unreachable: still list it so all 7 servers show
+            emitFallback(serverUrl, label, pageReferer, callback, seen)
+            return true
         }
         val inner = IFRAME_RX.find(level1)?.groupValues?.get(1) ?: run {
             // no iframe: maybe the server page is a player itself
-            return try {
+            val ok = try {
                 loadExtractor(serverUrl, pageReferer, subtitleCallback, callback)
             } catch (_: Exception) {
                 false
             }
+            if (!ok) emitFallback(serverUrl, label, pageReferer, callback, seen)
+            return true
         }
 
         // level 2: player page -> direct stream
@@ -275,7 +279,7 @@ class PressPlayz : MainAPI() {
         }
 
         // fallback: let CloudStream extractors try the player urls
-        return try {
+        val extracted = try {
             loadExtractor(inner, serverUrl, subtitleCallback, callback)
         } catch (_: Exception) {
             try {
@@ -284,6 +288,36 @@ class PressPlayz : MainAPI() {
                 false
             }
         }
+        if (!extracted) {
+            // unresolvable (backend down): still list it so all 7 servers show
+            emitFallback(serverUrl, label, pageReferer, callback, seen)
+        }
+        return true
+    }
+
+    private suspend fun emitFallback(
+        serverUrl: String,
+        label: String,
+        pageReferer: String,
+        callback: (ExtractorLink) -> Unit,
+        seen: MutableSet<String>,
+    ) {
+        val isNew = synchronized(seen) { seen.add("$label|$serverUrl") }
+        if (!isNew) return
+        callback(
+            newExtractorLink(
+                source = name,
+                name = label,
+                url = serverUrl,
+                type = ExtractorLinkType.VIDEO,
+            ) {
+                this.referer = pageReferer
+                this.headers = mapOf(
+                    "Referer" to pageReferer,
+                    "User-Agent" to BROWSER_UA,
+                )
+            }
+        )
     }
 
     private suspend fun emitStreams(
