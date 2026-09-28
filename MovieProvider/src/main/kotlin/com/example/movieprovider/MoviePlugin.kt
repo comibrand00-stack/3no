@@ -8,5 +8,6 @@ import com.lagradost.cloudstream3.plugins.Plugin
 class MoviePlugin : Plugin() {
     override fun load(context: Context) {
         registerMainAPI(Qesset())
+        registerMainAPI(BingeBang())
     }
 }
