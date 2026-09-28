@@ -76,7 +76,7 @@ This repository provides provider extensions for [CloudStream](https://github.co
 | Property | Value |
 |----------|-------|
 | **Name** | PressPlayz |
-| **Supported Types** | Live |
+| **Supported Types** | Movie (live channels) |
 | **Language** | English (`en`) |
 | **Status** | Active |
 | **Chromecast** | Yes |
@@ -86,7 +86,7 @@ This repository provides provider extensions for [CloudStream](https://github.co
 
 - `getMainPage()` - Live TV row (all channels) and Sports row (channels categorized as sports) from `/live-tv`
 - `search(query)` - Filters live channels by name
-- `load(url)` - Channel details as a live stream response
+- `load(url)` - Channel details as a playable response
 - `loadLinks(data)` - Resolves **all** Player servers (`.live-server` buttons → `dlive.sx` → backend player → direct HLS), with `loadExtractor` fallback
 
 ## Installation

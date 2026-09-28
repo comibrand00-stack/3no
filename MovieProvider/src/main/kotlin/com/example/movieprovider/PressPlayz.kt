@@ -12,7 +12,7 @@ class PressPlayz : MainAPI() {
     override var mainUrl = "https://pressplayz.to"
     override var name = "PressPlayz"
     override var lang = "en"
-    override val supportedTypes = setOf(TvType.Live)
+    override val supportedTypes = setOf(TvType.Movie)
     override val hasMainPage = true
     override val hasChromecastSupport = true
     override val hasDownloadSupport = false
@@ -83,7 +83,7 @@ class PressPlayz : MainAPI() {
     }
 
     private fun Channel.toSearchResponse(): SearchResponse =
-        newLiveSearchResponse(name, dataJson(mapOf("u" to pageUrl, "t" to name, "p" to logo)), TvType.Live) {
+        newMovieSearchResponse(name, dataJson(mapOf("u" to pageUrl, "t" to name, "p" to logo)), TvType.Movie) {
             this.posterUrl = logo
         }
 
@@ -132,7 +132,7 @@ class PressPlayz : MainAPI() {
         }
         title = title?.ifBlank { null } ?: throw ErrorLoadingException("PressPlayz: no title")
 
-        return newLiveStreamLoadResponse(title, pageUrl, pageUrl) {
+        return newMovieLoadResponse(title, pageUrl, TvType.Movie, pageUrl) {
             this.posterUrl = poster
         }
     }
