@@ -3,6 +3,6 @@
     "description": "A collection of movie streaming providers for CloudStream 3",
     "manifestVersion": 1,
     "pluginLists": [
-        "https://raw.githubusercontent.com/comibrand00-stack/MovieProviderRepo/builds/plugins.json"
+        "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/plugins.json"
     ]
 }
