@@ -1,10 +1,10 @@
 # MovieProvider Repository
 
-A CloudStream 3 plugin repository containing movie/series providers for **قصة عشق (Qesset)** and **BingeBang**.
+A CloudStream 3 plugin repository with two plugins: **MovieProvider** (movie/series providers for **قصة عشق (Qesset)** and **BingeBang**) and **Movish** (live IPTV + sports from `movish.to`).
 
 ## Overview
 
-This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` provider scrapes content from `qesset.com`, and the `BingeBang` provider uses the `bingebang.st` API.
+This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` provider scrapes content from `qesset.com`, the `BingeBang` provider uses the `bingebang.st` API, and the separate `Movish` plugin streams live TV channels from `movish.to`.
 
 ## Features
 
@@ -63,6 +63,25 @@ This repository provides provider extensions for [CloudStream](https://github.co
 - `search(query)` - Search via `/api/search/multi?query=<q>`
 - `load(url)` - Movie/series details (including seasons/episodes) from the `data-detail-payload` block
 - `loadLinks(data)` - Decrypts the player config, resolves **all** servers via `/api/player/sources` + `/api/player/resolve`, emits **Arabic subtitles only
+
+## Plugin: Movish
+
+| Property | Value |
+|----------|-------|
+| **Name** | Movish |
+| **Provider** | Movish (`movish.to`) |
+| **Supported Types** | Movie (live channels) |
+| **Language** | English (`en`) |
+| **Status** | Active |
+| **Chromecast** | Yes |
+| **Download** | No |
+
+### Methods
+
+- `getMainPage()` - Live IPTV row (all channels) and Sports row (filtered via `?category=sports`) from `/live-broadcasts`
+- `search(query)` - Filters live channels by name
+- `load(url)` - Channel details as a playable response
+- `loadLinks(data)` - Resolves the site embed (`/iptv-embed/<id>` → `dlive.sx` → backend player → direct HLS) plus a direct backend fast path, with `loadExtractor` fallback; only found servers are listed
 
 ## Installation
 
