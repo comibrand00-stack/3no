@@ -2,6 +2,7 @@ package com.example.redflix
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -304,14 +305,24 @@ class Redflix : MainAPI() {
         val results = coroutineScope {
             SERVERS.map { (serverId, label, domain) ->
                 async {
-                    val embed = buildEmbed(serverId, domain, id, isTv, season, episode)
-                    val ok = withTimeoutOrNull(SERVER_TIMEOUT_MS) {
-                        resolveEmbed(embed, label, domain, subtitleCallback, callback, seen)
-                    } ?: false
-                    if (!ok) {
-                        // still list the server so all 14 show
-                        withTimeoutOrNull(SERVER_TIMEOUT_MS) {
+                    try {
+                        val embed = buildEmbed(serverId, domain, id, isTv, season, episode)
+                        val ok = withTimeoutOrNull(SERVER_TIMEOUT_MS) {
+                            resolveEmbed(embed, label, domain, subtitleCallback, callback, seen)
+                        } ?: false
+                        if (!ok) {
+                            // still list the server so all 14 show
+                            withTimeoutOrNull(SERVER_TIMEOUT_MS) {
+                                emitFallback(embed, label, callback, seen)
+                            }
+                        }
+                    } catch (t: Throwable) {
+                        // never let one bad server kill the other 13 (but respect cancellation)
+                        if (t is CancellationException) throw t
+                        try {
+                            val embed = buildEmbed(serverId, domain, id, isTv, season, episode)
                             emitFallback(embed, label, callback, seen)
+                        } catch (_: Throwable) {
                         }
                     }
                     true
