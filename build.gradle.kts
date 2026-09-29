@@ -65,7 +65,7 @@ subprojects {
     }
 
     android {
-        namespace = if (project.name == "Movish") "com.example.movish" else "com.example.movieprovider"
+        namespace = "com.example.movieprovider"
 
         defaultConfig {
             minSdk = 21
