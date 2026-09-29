@@ -68,7 +68,6 @@ subprojects {
         namespace = when (project.name) {
             "Qesset" -> "com.example.qesset"
             "BingeBang" -> "com.example.bingebang"
-            "Redflix" -> "com.example.redflix"
             else -> "com.example.movieprovider"
         }
 
