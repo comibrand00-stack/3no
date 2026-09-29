@@ -65,7 +65,10 @@ subprojects {
     }
 
     android {
-        namespace = "com.example.movieprovider"
+        namespace = when (project.name) {
+            "Redflix" -> "com.example.redflix"
+            else -> "com.example.movieprovider"
+        }
 
         defaultConfig {
             minSdk = 21

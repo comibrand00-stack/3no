@@ -1,10 +1,10 @@
 # MovieProvider Repository
 
-A CloudStream 3 plugin repository containing movie/series providers for **قصة عشق (Qesset)** and **BingeBang**.
+A CloudStream 3 plugin repository with two plugins: **MovieProvider** (movie/series providers for **قصة عشق (Qesset)** and **BingeBang**) and **Redflix** (Turkey, Iran and Afghanistan movies/series with Arabic subtitles from `redflix.one`).
 
 ## Overview
 
-This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` provider scrapes content from `qesset.com`, and the `BingeBang` provider uses the `bingebang.st` API.
+This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` provider scrapes content from `qesset.com`, the `BingeBang` provider uses the `bingebang.st` API, and the separate `Redflix` plugin covers Turkey/Iran/Afghanistan movies and series from `redflix.one` with all 14 servers and Arabic subtitles.
 
 ## Features
 
@@ -63,6 +63,25 @@ This repository provides provider extensions for [CloudStream](https://github.co
 - `search(query)` - Search via `/api/search/multi?query=<q>`
 - `load(url)` - Movie/series details (including seasons/episodes) from the `data-detail-payload` block
 - `loadLinks(data)` - Decrypts the player config, resolves **all** servers via `/api/player/sources` + `/api/player/resolve`, emits **Arabic subtitles only
+
+## Plugin: Redflix
+
+| Property | Value |
+|----------|-------|
+| **Name** | Redflix |
+| **Provider** | Redflix (`redflix.one`) |
+| **Supported Types** | Movie, TvSeries |
+| **Language** | English (`en`) |
+| **Status** | Active |
+| **Chromecast** | Yes |
+| **Download** | Yes |
+
+### Methods
+
+- `getMainPage()` - Turkey/Iran/Afghanistan × Movies/Series rows from `/api/tmdb/discover` (`with_origin_country`)
+- `search(query)` - Search via `/api/tmdb/search/multi`
+- `load(url)` - Movie/series details (including season episodes) from `/api/tmdb`
+- `loadLinks(data)` - Builds all 14 server embeds (Vid, PlayFast, Redflix, Hindi, Hindi New, Cinezo, Orion, Premium, Vidgod, Bolt, Mega, Nova, Hindi Mirror, Alpha), resolves direct streams, emits **Arabic subtitles only** (embed tracks + SubtitleCat fallback)
 
 ## Installation
 
