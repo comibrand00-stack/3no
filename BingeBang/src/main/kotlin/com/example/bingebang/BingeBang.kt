@@ -1,4 +1,4 @@
-package com.example.movieprovider
+package com.example.bingebang
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*

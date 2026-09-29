@@ -1,10 +1,10 @@
 # MovieProvider Repository
 
-A CloudStream 3 plugin repository with two plugins: **MovieProvider** (movie/series providers for **قصة عشق (Qesset)** and **BingeBang**) and **Redflix** (Turkey, Iran and Afghanistan movies/series with Arabic subtitles from `redflix.one`).
+A CloudStream 3 plugin repository with three plugins: **Qesset** (قصة عشق movies/series from `qesset.com`), **BingeBang** (movies/series with Arabic subtitles from `bingebang.st`) and **Redflix** (Turkey, Iran and Afghanistan movies/series with Arabic subtitles from `redflix.one`).
 
 ## Overview
 
-This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` provider scrapes content from `qesset.com`, the `BingeBang` provider uses the `bingebang.st` API, and the separate `Redflix` plugin covers Turkey/Iran/Afghanistan movies and series from `redflix.one` with all 14 servers and Arabic subtitles.
+This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, the `BingeBang` plugin uses the `bingebang.st` API, and the `Redflix` plugin covers Turkey/Iran/Afghanistan movies and series from `redflix.one` with all 14 servers and Arabic subtitles.
 
 ## Features
 
