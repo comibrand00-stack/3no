@@ -28,6 +28,7 @@ class Movish : MainAPI() {
         const val MAX_ITEMS = 48
         const val MAX_SEARCH_ITEMS = 50
         const val SERVER_TIMEOUT_MS = 25_000L
+        const val PLAYLIST_TIMEOUT_MS = 15_000L
 
         // channel cards on /live-broadcasts (and ?category=sports)
         val CARD_RX = Regex(
@@ -46,6 +47,12 @@ class Movish : MainAPI() {
         val M3U8_RX = Regex("""https?://[^\s"'<>\\]+\.m3u8(?:[^\s"'<>\\]*)?""")
         val ORIGIN_RX = Regex("""^(https?://[^/]+)""")
         val H1_RX = Regex("""<h1[^>]*>(.*?)</h1>""", RegexOption.DOT_MATCHES_ALL)
+        // non-directive playlist lines (segment/variant URIs)
+        val SEG_RX = Regex("""^[^#\s][^\s]*$""", RegexOption.MULTILINE)
+        val MEDIA_RX = Regex(
+            """\.(ts|m4s|mp4|m3u8|cmfv|cmfa|aac|mp3)(\?|$)""",
+            RegexOption.IGNORE_CASE,
+        )
     }
 
     private data class Channel(
@@ -294,6 +301,10 @@ class Movish : MainAPI() {
             val isNew = synchronized(seen) { seen.add("$label|$streamUrl") }
             if (!isNew) continue
             val isHls = streamUrl.contains(".m3u8", true)
+            // validate HLS playlists up front: poisoned backends serve
+            // syntactically-valid playlists with junk segments that only
+            // fail later in the player (PARSING_CONTAINER_MALFORMED)
+            if (isHls && !isPlaylistPlayable(streamUrl, streamReferer)) continue
             callback(
                 newExtractorLink(
                     source = name,
@@ -316,6 +327,52 @@ class Movish : MainAPI() {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    private suspend fun isPlaylistPlayable(url: String, referer: String): Boolean {
+        val text = try {
+            withTimeoutOrNull(PLAYLIST_TIMEOUT_MS) {
+                app.get(
+                    url,
+                    headers = mapOf(
+                        "Referer" to referer,
+                        "User-Agent" to BROWSER_UA,
+                        "Accept" to "*/*",
+                    ),
+                ).text
+            }
+        } catch (_: Exception) {
+            null
+        } ?: return false
+        if (!text.contains("#EXTM3U")) return false
+        // master playlists delegate variant choice to the player
+        if (text.contains("#EXT-X-STREAM-INF")) return true
+        // encrypted legit streams reference key/map URIs
+        if (text.contains("#EXT-X-KEY") || text.contains("#EXT-X-MAP")) return true
+        val host = try {
+            java.net.URL(url).host.lowercase()
+        } catch (_: Exception) {
+            null
+        }
+        var hasAbsoluteSeg = false
+        for (m in SEG_RX.findAll(text)) {
+            val line = m.value.trim()
+            if (line.isEmpty()) continue
+            if (!line.startsWith("http")) continue // relative URI: same origin as playlist
+            hasAbsoluteSeg = true
+            // media extension, or chunks served from the playlist's own host
+            if (MEDIA_RX.containsMatchIn(line)) return true
+            if (host != null) {
+                val segHost = try {
+                    java.net.URL(line).host.lowercase()
+                } catch (_: Exception) {
+                    null
+                }
+                if (segHost != null && (segHost == host || segHost.endsWith(".$host"))) return true
+            }
+        }
+        // relative-only segments resolve against the playlist host: playable
+        return !hasAbsoluteSeg && text.contains("#EXTINF")
+    }
 
     private fun pageHeaders(referer: String = "$mainUrl/"): Map<String, String> = mapOf(
         "User-Agent" to BROWSER_UA,
