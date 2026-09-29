@@ -1,4 +1,4 @@
-version = 1
+version = 2
 
 cloudstream {
     description = "Redflix - Turkey, Iran and Afghanistan movies and series with Arabic subtitles"

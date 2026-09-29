@@ -311,7 +311,7 @@ class Redflix : MainAPI() {
                     if (!ok) {
                         // still list the server so all 14 show
                         withTimeoutOrNull(SERVER_TIMEOUT_MS) {
-                            emitFallback(embed, label, subtitleCallback, callback, seen)
+                            emitFallback(embed, label, callback, seen)
                         }
                     }
                     true
@@ -521,23 +521,27 @@ class Redflix : MainAPI() {
         if (!isNew) return false
         val realOrigin = origin ?: ORIGIN_RX.find(streamReferer)?.groupValues?.get(1)
         val isHls = streamUrl.contains(".m3u8", true)
-        callback(
-            newExtractorLink(
-                source = name,
-                name = label,
-                url = streamUrl,
-                type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
-            ) {
-                this.referer = streamReferer
-                val headers = mutableMapOf(
-                    "Referer" to streamReferer,
-                    "User-Agent" to BROWSER_UA,
-                )
-                if (realOrigin != null) headers["Origin"] = realOrigin
-                this.headers = headers
-            }
-        )
-        return true
+        return try {
+            callback(
+                newExtractorLink(
+                    source = name,
+                    name = label,
+                    url = streamUrl,
+                    type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
+                ) {
+                    this.referer = streamReferer
+                    val headers = mutableMapOf(
+                        "Referer" to streamReferer,
+                        "User-Agent" to BROWSER_UA,
+                    )
+                    if (realOrigin != null) headers["Origin"] = realOrigin
+                    this.headers = headers
+                }
+            )
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun emitSub(
@@ -547,44 +551,43 @@ class Redflix : MainAPI() {
     ) {
         val isNew = synchronized(seen) { seen.add("sub|$subUrl") }
         if (!isNew) return
-        subtitleCallback(
-            SubtitleFile("Arabic", subUrl).apply {
-                this.headers = mapOf("User-Agent" to BROWSER_UA)
-            }
-        )
+        try {
+            subtitleCallback(
+                SubtitleFile("Arabic", subUrl).apply {
+                    this.headers = mapOf("User-Agent" to BROWSER_UA)
+                }
+            )
+        } catch (_: Exception) {
+        }
     }
 
     private suspend fun emitFallback(
         embedUrl: String,
         label: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit,
         seen: MutableSet<String>,
     ) {
-        // extractor attempt first so working backends resolve properly
-        val ok = try {
-            loadExtractor(embedUrl, "$mainUrl/", subtitleCallback, callback)
-        } catch (_: Exception) {
-            false
-        }
-        if (ok) return
-        // still list the server (backend down) so all 14 show
+        // list instantly: extractors were already attempted in resolveEmbed when
+        // the embed page was reachable, so don't waste time retrying dead hosts
         val isNew = synchronized(seen) { seen.add("$label|$embedUrl") }
         if (!isNew) return
-        callback(
-            newExtractorLink(
-                source = name,
-                name = label,
-                url = embedUrl,
-                type = ExtractorLinkType.VIDEO,
-            ) {
-                this.referer = "$mainUrl/"
-                this.headers = mapOf(
-                    "Referer" to "$mainUrl/",
-                    "User-Agent" to BROWSER_UA,
-                )
-            }
-        )
+        try {
+            callback(
+                newExtractorLink(
+                    source = name,
+                    name = label,
+                    url = embedUrl,
+                    type = ExtractorLinkType.VIDEO,
+                ) {
+                    this.referer = "$mainUrl/"
+                    this.headers = mapOf(
+                        "Referer" to "$mainUrl/",
+                        "User-Agent" to BROWSER_UA,
+                    )
+                }
+            )
+        } catch (_: Exception) {
+        }
     }
 
     // ---------------------------------------------------------------- arabic subs
