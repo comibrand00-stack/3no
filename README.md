@@ -1,10 +1,10 @@
 # MovieProvider Repository
 
-A CloudStream 3 plugin repository containing movie/series providers for **قصة عشق (Qesset)** and **BingeBang**, plus a live TV provider for **PressPlayz**.
+A CloudStream 3 plugin repository containing movie/series providers for **قصة عشق (Qesset)** and **BingeBang**.
 
 ## Overview
 
-This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` provider scrapes content from `qesset.com`, the `BingeBang` provider uses the `bingebang.st` API, and the `PressPlayz` provider streams live TV channels from `pressplayz.to`.
+This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` provider scrapes content from `qesset.com`, and the `BingeBang` provider uses the `bingebang.st` API.
 
 ## Features
 
@@ -26,13 +26,6 @@ This repository provides provider extensions for [CloudStream](https://github.co
 - **Streaming links**: Resolves **all** servers from `/api/player/sources` (`/api/player/resolve`)
 - **Subtitles**: **Arabic only** (server subtitles filtered to Arabic + SubtitleCat fallback)
 - **Download support**: Supported
-- **Chromecast**: Supported
-
-### PressPlayz
-
-- **Homepage sections**: Live TV (all channels) and Sports (site-categorized sports channels)
-- **Search**: Search live channels by name
-- **Streaming links**: Resolves **all** Player servers per channel (dlive.sx → player backends → direct HLS)
 - **Chromecast**: Supported
 
 ## Provider: Qesset
@@ -71,24 +64,6 @@ This repository provides provider extensions for [CloudStream](https://github.co
 - `load(url)` - Movie/series details (including seasons/episodes) from the `data-detail-payload` block
 - `loadLinks(data)` - Decrypts the player config, resolves **all** servers via `/api/player/sources` + `/api/player/resolve`, emits **Arabic subtitles only
 
-## Provider: PressPlayz
-
-| Property | Value |
-|----------|-------|
-| **Name** | PressPlayz |
-| **Supported Types** | Movie (live channels) |
-| **Language** | English (`en`) |
-| **Status** | Active |
-| **Chromecast** | Yes |
-| **Download** | No |
-
-### Methods
-
-- `getMainPage()` - Live TV row (all channels) and Sports row (channels categorized as sports) from `/live-tv`
-- `search(query)` - Filters live channels by name
-- `load(url)` - Channel details as a playable response
-- `loadLinks(data)` - Resolves **all** Player servers (`.live-server` buttons → `dlive.sx` → backend player → direct HLS), with `loadExtractor` fallback
-
 ## Installation
 
 ### Adding this Repository to CloudStream
@@ -99,7 +74,7 @@ This repository provides provider extensions for [CloudStream](https://github.co
    ```
    https://raw.githubusercontent.com/comibrand00-stack/3no/master/repo.json
    ```
-4. The **قصة عشق (Qesset)**, **BingeBang** and **PressPlayz** providers will appear in the provider list
+4. The **قصة عشق (Qesset)** and **BingeBang** providers will appear in the provider list
 
 ### Build from Source
 

@@ -1,7 +1,7 @@
-﻿version = 27
+﻿version = 28
 
 cloudstream {
-    description = "قصة عشق (Qesset), BingeBang and PressPlayz - movies, series and live tv providers"
+    description = "قصة عشق (Qesset) and BingeBang - movies and series providers"
     authors = listOf("comibrand00-stack")
     status = 1
     tvTypes = listOf("Movie", "TvSeries")
