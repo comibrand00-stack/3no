@@ -1,10 +1,10 @@
 # MovieProvider Repository
 
-A CloudStream 3 plugin repository with three plugins: **Qesset** (قصة عشق movies/series from `qesset.com`), **BingeBang** (movies/series with Arabic subtitles from `bingebang.st`) and **CIMALEEK** (all سيما ليك sections: movies, series, anime from `wwr433.b2cima.click`).
+A CloudStream 3 plugin repository with four plugins: **Qesset** (قصة عشق movies/series from `qesset.com`), **BingeBang** (movies/series with Arabic subtitles from `bingebang.st`), **CIMALEEK** (all سيما ليك sections from `wwr433.b2cima.click`) and **alooyTV** (all alooytv lists: series, movies, anime from `ec.alooytv16.xyz`).
 
 ## Overview
 
-This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, the `BingeBang` plugin uses the `bingebang.st` API, and the `Cimaleek` plugin covers every سيما ليك section from `wwr433.b2cima.click`.
+This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, the `BingeBang` plugin uses the `bingebang.st` API, the `Cimaleek` plugin covers every سيما ليك section from `wwr433.b2cima.click`, and the `AlooyTV` plugin covers every alooytv list from `ec.alooytv16.xyz`.
 
 ## Features
 
@@ -82,6 +82,25 @@ This repository provides provider extensions for [CloudStream](https://github.co
 - `search(query)` - Search via `/?s=<query>`
 - `load(url)` - Movie/series details (including season episodes from `/seasons/` + `/episodes/`)
 - `loadLinks(data)` - Watch-page sources plus lala player API, with `loadExtractor` fallback and Arabic subtitles (SubtitleCat)
+
+## Plugin: alooyTV
+
+| Property | Value |
+|----------|-------|
+| **Name** | alooyTV |
+| **Provider** | AlooyTV (`ec.alooytv16.xyz`) |
+| **Supported Types** | Movie, TvSeries |
+| **Language** | Arabic (`ar`) |
+| **Status** | Active |
+| **Chromecast** | Yes |
+| **Download** | Yes |
+
+### Methods
+
+- `getMainPage()` - All 21 site lists (latest + every genre: خليجي، عربي، تركي، فارسي، انمي، رمضان …)
+- `search(query)` - Search via `/search?q=<query>`
+- `load(url)` - Series episodes (`Ep#N` buttons with `?key=` stream tokens) or movie details
+- `loadLinks(data)` - Direct mp4 from the watch page plus Arabic subtitles (SubtitleCat)
 
 ## Installation
 
