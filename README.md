@@ -1,10 +1,10 @@
 # MovieProvider Repository
 
-A CloudStream 3 plugin repository with two plugins: **Qesset** (قصة عشق movies/series from `qesset.com`) and **BingeBang** (movies/series with Arabic subtitles from `bingebang.st`).
+A CloudStream 3 plugin repository with three plugins: **Qesset** (قصة عشق movies/series from `qesset.com`), **BingeBang** (movies/series with Arabic subtitles from `bingebang.st`) and **CIMALEEK** (all سيما ليك sections: movies, series, anime from `wwr433.b2cima.click`).
 
 ## Overview
 
-This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, and the `BingeBang` plugin uses the `bingebang.st` API.
+This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, the `BingeBang` plugin uses the `bingebang.st` API, and the `Cimaleek` plugin covers every سيما ليك section from `wwr433.b2cima.click`.
 
 ## Features
 
@@ -63,6 +63,25 @@ This repository provides provider extensions for [CloudStream](https://github.co
 - `search(query)` - Search via `/api/search/multi?query=<q>`
 - `load(url)` - Movie/series details (including seasons/episodes) from the `data-detail-payload` block
 - `loadLinks(data)` - Decrypts the player config, resolves **all** servers via `/api/player/sources` + `/api/player/resolve`, emits **Arabic subtitles only
+
+## Plugin: CIMALEEK
+
+| Property | Value |
+|----------|-------|
+| **Name** | CIMALEEK |
+| **Provider** | Cimaleek (`wwr433.b2cima.click`) |
+| **Supported Types** | Movie, TvSeries |
+| **Language** | Arabic (`ar`) |
+| **Status** | Active |
+| **Chromecast** | Yes |
+| **Download** | Yes |
+
+### Methods
+
+- `getMainPage()` - All 14 site sections (movies, series, recent, trending, all movie/series categories)
+- `search(query)` - Search via `/?s=<query>`
+- `load(url)` - Movie/series details (including season episodes from `/seasons/` + `/episodes/`)
+- `loadLinks(data)` - Watch-page sources plus lala player API, with `loadExtractor` fallback and Arabic subtitles (SubtitleCat)
 
 ## Installation
 
