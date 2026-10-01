@@ -64,6 +64,10 @@ class AlooyTV : MainAPI() {
         val EPNUM_RX = Regex("""Ep#(\d+)""")
         // direct mp4 in <source>; placeholder https://vid2.0 has no letter TLD
         val SRC_RX = Regex("""<source[^>]+src="(https?://[^"]+)"""")
+        // protocol-relative sources: src="//host/path.mp4"
+        val PROTO_RX = Regex("""<source[^>]+src="(//[^"]+)"""")
+        // download button carries the same mp4 base64-encoded
+        val DL_RX = Regex("""download_video\.php\?video_url=([A-Za-z0-9+/=]+)""")
         val HOST_RX = Regex("""^https?://[^/]*\.[A-Za-z]{2,}""")
         val TITLE_TAG_RX = Regex("""<title>(.*?)</title>""", RegexOption.DOT_MATCHES_ALL)
         val OGIMG_RX = Regex("""<meta property="og:image" content="([^"]+)"""")
@@ -241,10 +245,9 @@ class AlooyTV : MainAPI() {
         var found = false
         val seen = mutableSetOf<String>()
         val origin = ORIGIN_RX.find(pageUrl)?.groupValues?.get(1)
-        for (m in SRC_RX.findAll(html)) {
-            val streamUrl = m.groupValues[1]
-            if (!HOST_RX.containsMatchIn(streamUrl)) continue
-            if (!seen.add(streamUrl)) continue
+        suspend fun emit(streamUrl: String) {
+            if (!HOST_RX.containsMatchIn(streamUrl)) return
+            if (!seen.add(streamUrl)) return
             val isHls = streamUrl.contains(".m3u8", true)
             try {
                 callback(
@@ -265,6 +268,29 @@ class AlooyTV : MainAPI() {
                 )
                 found = true
             } catch (_: Exception) {
+            }
+        }
+        for (m in SRC_RX.findAll(html)) {
+            emit(m.groupValues[1])
+        }
+        if (!found) {
+            // protocol-relative sources
+            for (m in PROTO_RX.findAll(html)) {
+                emit("https:" + m.groupValues[1])
+            }
+        }
+        if (!found) {
+            // download button carries the same mp4 base64-encoded
+            for (m in DL_RX.findAll(html)) {
+                val decoded = try {
+                    String(
+                        java.util.Base64.getMimeDecoder().decode(m.groupValues[1]),
+                        Charsets.UTF_8,
+                    ).trim()
+                } catch (_: Exception) {
+                    null
+                }
+                if (decoded != null && decoded.startsWith("http")) emit(decoded)
             }
         }
 
