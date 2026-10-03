@@ -29,29 +29,29 @@ class AlooyTV : MainAPI() {
         const val NET_TIMEOUT_MS = 15_000L
         const val SERVER_TIMEOUT_MS = 25_000L
 
-        // all site lists: label to path
+        // all site lists: label to (path, forced series? null = guess by episode count)
         val ROWS = listOf(
-            "الأحدث" to "/tv-series.html",
-            "خليجي" to "/genre/kleeji.html",
-            "عربي" to "/genre/arabic.html",
-            "تركي" to "/genre/turki.html",
-            "رمضان خليجي 2023" to "/genre/ramadan-kleeji.html",
-            "رمضان عربي 2023" to "/genre/ramadan-arabi.html",
-            "رمضان خليجي 2024" to "/genre/ramadan-kleeji-2024.html",
-            "رمضان عربي 2024" to "/genre/ramadan-arabi-2024.html",
-            "فارسي" to "/genre/farisi.html",
-            "رمضان عربي 2025" to "/genre/ramadan-arabi-2025.html",
-            "رمضان خليجي 2025" to "/genre/ramadan-kleeji-2025.html",
-            "انمي" to "/genre/anmi.html",
-            "افلام اجنبية" to "/genre/foreign-movies.html",
-            "افلام كورية" to "/genre/Korean-movies.html",
-            "مسلسلات اجنبية" to "/genre/Foreign-series.html",
-            "مسلسلات كورية" to "/genre/Korean-series.html",
-            "مسلسلات اسيوية" to "/genre/asia-series.html",
-            "رمضان خليجي 2026" to "/genre/ramadan-kleeji-2026.html",
-            "رمضان عربي 2026" to "/genre/ramadan-arabi-2026.html",
-            "افلام عربية" to "/genre/arabic-movies.html",
-            "مسرحيات" to "/genre/masrahiyat.html",
+            Triple("الأحدث", "/tv-series.html", null),
+            Triple("خليجي", "/genre/kleeji.html", true),
+            Triple("عربي", "/genre/arabic.html", true),
+            Triple("تركي", "/genre/turki.html", true),
+            Triple("رمضان خليجي 2023", "/genre/ramadan-kleeji.html", true),
+            Triple("رمضان عربي 2023", "/genre/ramadan-arabi.html", true),
+            Triple("رمضان خليجي 2024", "/genre/ramadan-kleeji-2024.html", true),
+            Triple("رمضان عربي 2024", "/genre/ramadan-arabi-2024.html", true),
+            Triple("فارسي", "/genre/farisi.html", true),
+            Triple("رمضان عربي 2025", "/genre/ramadan-arabi-2025.html", true),
+            Triple("رمضان خليجي 2025", "/genre/ramadan-kleeji-2025.html", true),
+            Triple("انمي", "/genre/anmi.html", null),
+            Triple("افلام اجنبية", "/genre/foreign-movies.html", false),
+            Triple("افلام كورية", "/genre/Korean-movies.html", false),
+            Triple("مسلسلات اجنبية", "/genre/Foreign-series.html", true),
+            Triple("مسلسلات كورية", "/genre/Korean-series.html", true),
+            Triple("مسلسلات اسيوية", "/genre/asia-series.html", true),
+            Triple("رمضان خليجي 2026", "/genre/ramadan-kleeji-2026.html", true),
+            Triple("رمضان عربي 2026", "/genre/ramadan-arabi-2026.html", true),
+            Triple("افلام عربية", "/genre/arabic-movies.html", false),
+            Triple("مسرحيات", "/genre/masrahiyat.html", false),
         )
 
         const val CARD_SPLIT = "latest-movie-img-container"
@@ -80,9 +80,9 @@ class AlooyTV : MainAPI() {
         if (page > 1) return null
 
         val lists = coroutineScope {
-            ROWS.map { (label, path) ->
+            ROWS.map { (label, path, forceTv) ->
                 async {
-                    val items = fetchCards("$mainUrl$path")
+                    val items = fetchCards("$mainUrl$path", forceTv)
                     if (items.isEmpty()) null else HomePageList(label, items.take(MAX_ROW_ITEMS), true)
                 }
             }.awaitAll().filterNotNull()
@@ -100,24 +100,24 @@ class AlooyTV : MainAPI() {
             val html = withTimeoutOrNull(NET_TIMEOUT_MS) {
                 app.get(url, headers = pageHeaders()).text
             } ?: return emptyList()
-            parseCards(html).take(MAX_SEARCH_ITEMS)
+            parseCards(html, null).take(MAX_SEARCH_ITEMS)
         } catch (_: Exception) {
             emptyList()
         }
     }
 
-    private suspend fun fetchCards(listUrl: String): List<SearchResponse> {
+    private suspend fun fetchCards(listUrl: String, forceTv: Boolean? = null): List<SearchResponse> {
         return try {
             val html = withTimeoutOrNull(NET_TIMEOUT_MS) {
                 app.get(listUrl, headers = pageHeaders()).text
             } ?: return emptyList()
-            parseCards(html)
+            parseCards(html, forceTv)
         } catch (_: Exception) {
             emptyList()
         }
     }
 
-    private fun parseCards(html: String): List<SearchResponse> {
+    private fun parseCards(html: String, forceTv: Boolean?): List<SearchResponse> {
         val out = mutableListOf<SearchResponse>()
         val seen = mutableSetOf<String>()
         for (chunk in html.split(CARD_SPLIT).drop(1)) {
@@ -130,12 +130,13 @@ class AlooyTV : MainAPI() {
             val title = TITLE_RX.find(window)?.groupValues?.get(1)?.trim()
                 ?.ifBlank { null } ?: continue
             val epCount = COUNT_RX.find(window)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            val isTv = epCount > 1
+            val isTv = forceTv ?: (epCount > 1)
             val data = dataJson(
                 mapOf(
                     "u" to page,
                     "t" to title,
                     "ec" to epCount,
+                    "ftv" to forceTv,
                 )
             )
             if (isTv) {
@@ -161,7 +162,8 @@ class AlooyTV : MainAPI() {
         }
         val pageUrl = info?.optString("u")?.ifBlank { null } ?: url
         if (!pageUrl.startsWith("http")) return null
-        val hintSeries = info?.optInt("ec", 0)?.let { it > 1 } ?: false
+        val forceTv = if (info?.has("ftv") == true) info.optBoolean("ftv") else null
+        val hintSeries = forceTv ?: (info?.optInt("ec", 0)?.let { it > 1 } ?: false)
 
         val html = try {
             withTimeoutOrNull(NET_TIMEOUT_MS) {
@@ -200,15 +202,19 @@ class AlooyTV : MainAPI() {
                     this.episode = number
                 }
             }
-            if (list.isEmpty()) throw ErrorLoadingException("alooyTV: no episodes")
-            return newTvSeriesLoadResponse(title, pageUrl, TvType.TvSeries, list) {
-                this.posterUrl = poster
+            if (list.isNotEmpty()) {
+                return newTvSeriesLoadResponse(title, pageUrl, TvType.TvSeries, list) {
+                    this.posterUrl = poster
+                }
             }
+            // forced series with no buttons found: fall through to movie
         }
 
+        // single-button items play through their keyed url
+        val playUrl = if (episodes.size == 1) episodes[0].second else pageUrl
         val data = dataJson(
             mapOf(
-                "u" to pageUrl,
+                "u" to playUrl,
                 "t" to title,
             )
         )

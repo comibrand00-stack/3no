@@ -1,4 +1,4 @@
-version = 2
+version = 3
 
 cloudstream {
     description = "alooyTV - Arabic, Gulf, Turkish and Korean series and movies"
