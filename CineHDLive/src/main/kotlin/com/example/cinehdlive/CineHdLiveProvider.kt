@@ -1,5 +1,7 @@
 package com.example.cinehdlive
 
+import android.util.JsonReader
+import android.util.JsonToken
 import com.lagradost.cloudstream3.ErrorLoadingException
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
@@ -17,11 +19,13 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.StringReader
 import java.util.Locale
 
 class CineHdLiveProvider : MainAPI() {
@@ -30,6 +34,11 @@ class CineHdLiveProvider : MainAPI() {
         private const val MAX_STREAMS = 15
         private const val CACHE_TTL_MS = 6 * 60 * 60 * 1000L
         private const val CACHE_FILE = "cinehd-live-catalog.json"
+        private const val MIRROR_CATALOG_URL =
+            "https://raw.githubusercontent.com/comibrand00-stack/3no/catalog/catalog.json"
+        private const val CATALOG_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
         private val catalogMutex = Mutex()
         private val whitespaceRegex = Regex("\\s+")
@@ -191,7 +200,7 @@ class CineHdLiveProvider : MainAPI() {
         "all" to "كل القنوات",
     )
 
-    private val apiUrl: String
+    private val siteCatalogUrl: String
         get() = mainUrl.trimEnd('/') + "/api/live-tv"
 
     override suspend fun getMainPage(
@@ -304,97 +313,116 @@ class CineHdLiveProvider : MainAPI() {
                 if (System.currentTimeMillis() - cachedAt < CACHE_TTL_MS) return@withLock it
             }
 
-            val freshCache = readCache()
-            val diskCatalog = freshCache?.let { text ->
-                runCatching { parseCatalog(text) }.getOrNull()
-            }
-            if (diskCatalog != null) {
-                cachedCatalog = diskCatalog
-                cachedAt = System.currentTimeMillis()
-                return@withLock diskCatalog
-            }
-
-            val fetched = runCatching {
-                app.get(apiUrl, timeout = 120).text
-            }.getOrNull()
-
-            val fetchedCatalog = if (!fetched.isNullOrBlank()) {
-                writeCache(fetched)
-                runCatching { parseCatalog(fetched) }.getOrNull()
-            } else {
-                null
-            }
-
-            val catalog = fetchedCatalog
-                ?: readCache(ignoreAge = true)?.let { text ->
-                    runCatching { parseCatalog(text) }.getOrNull()
+            // 1. Fresh local cache from a previous successful load.
+            readCache()?.let { text ->
+                runCatching { parseCatalog(text) }.getOrNull()?.let { catalog ->
+                    cachedCatalog = catalog
+                    cachedAt = System.currentTimeMillis()
+                    return@withLock catalog
                 }
-                ?: throw ErrorLoadingException("CineHD Live: unable to load channel catalog")
+            }
 
-            cachedCatalog = catalog
-            cachedAt = System.currentTimeMillis()
-            catalog
+            // 2. GitHub mirror first (fast, reliable), then the site itself.
+            val errors = ArrayList<String>(2)
+            for (url in listOf(MIRROR_CATALOG_URL, siteCatalogUrl)) {
+                try {
+                    val body = fetchCatalogText(url)
+                    val catalog = parseCatalog(body)
+                    writeCache(body)
+                    cachedCatalog = catalog
+                    cachedAt = System.currentTimeMillis()
+                    return@withLock catalog
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    val reason = e.message ?: e.javaClass.simpleName
+                    errors.add("${hostOf(url)}: ${reason.take(160)}")
+                }
+            }
+
+            // 3. Last resort: expired local cache.
+            readCache(ignoreAge = true)?.let { text ->
+                runCatching { parseCatalog(text) }.getOrNull()?.let { catalog ->
+                    cachedCatalog = catalog
+                    cachedAt = System.currentTimeMillis()
+                    return@withLock catalog
+                }
+            }
+
+            throw ErrorLoadingException(
+                "CineHD Live: unable to load channel catalog (${errors.joinToString(" | ")})"
+            )
         }
     }
 
+    private suspend fun fetchCatalogText(url: String): String {
+        val response = try {
+            app.get(
+                url,
+                headers = mapOf(
+                    "Accept" to "application/json, text/plain, */*",
+                    "User-Agent" to CATALOG_USER_AGENT,
+                ),
+                timeout = 120,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            throw ErrorLoadingException(
+                "network error (${e.javaClass.simpleName}: ${e.message ?: "no details"})"
+            )
+        }
+
+        if (!response.isSuccessful) {
+            throw ErrorLoadingException("HTTP ${response.code}")
+        }
+
+        val body = response.text
+        if (body.isBlank()) {
+            throw ErrorLoadingException("empty response (HTTP ${response.code})")
+        }
+        if (!body.trimStart().startsWith("{")) {
+            val preview = body.take(80).replace('\n', ' ').replace('\r', ' ')
+            throw ErrorLoadingException("unexpected response (HTTP ${response.code}): $preview")
+        }
+
+        return body
+    }
+
+    private fun hostOf(url: String): String {
+        return url.substringAfter("://").substringBefore('/')
+    }
+
     private fun parseCatalog(text: String): CineHdCatalog {
-        val root = runCatching { JSONObject(text) }.getOrNull()
-            ?: throw ErrorLoadingException("CineHD Live: invalid channel catalog")
-
-        val countryNames = HashMap<String, String>()
-        val countries = root.optJSONArray("countries")
-        if (countries != null) {
-            for (index in 0 until countries.length()) {
-                val item = countries.optJSONObject(index) ?: continue
-                val code = item.optString("code").uppercase(Locale.ROOT)
-                if (code.isNotBlank()) {
-                    countryNames[code] = item.optString("name")
-                }
-            }
-        }
-
+        val parsedChannels = LinkedHashMap<String, ParsedChannel>()
         val streamsByChannel = HashMap<String, MutableList<CineHdStream>>()
-        val apiStreams = root.optJSONArray("streams")
-        if (apiStreams != null) {
-            for (index in 0 until apiStreams.length()) {
-                val item = apiStreams.optJSONObject(index) ?: continue
-                val channelId = item.optString("channel")
-                val url = item.optString("url")
-                if (channelId.isBlank() || url.isBlank()) continue
+        val countryNames = HashMap<String, String>()
 
-                streamsByChannel.getOrPut(channelId) { mutableListOf() }.add(
-                    CineHdStream(
-                        url = url,
-                        quality = item.optString("quality").takeIf { it.isNotBlank() },
-                        feed = item.optString("feed").takeIf { it.isNotBlank() },
-                    )
-                )
+        try {
+            JsonReader(StringReader(text)).use { reader ->
+                reader.isLenient = true
+                reader.beginObject()
+                while (reader.hasNext()) {
+                    when (reader.nextName()) {
+                        "channels" -> readChannels(reader, parsedChannels)
+                        "streams" -> readStreams(reader, streamsByChannel)
+                        "countries" -> readCountries(reader, countryNames)
+                        else -> reader.skipValue()
+                    }
+                }
+                reader.endObject()
             }
+        } catch (e: Throwable) {
+            throw ErrorLoadingException(
+                "invalid catalog data (${e.javaClass.simpleName}: ${e.message ?: "parse error"})"
+            )
         }
 
-        val channelsArray = root.optJSONArray("channels") ?: JSONArray()
-        val channels = ArrayList<CineHdChannel>(channelsArray.length())
-
-        for (index in 0 until channelsArray.length()) {
-            val item = channelsArray.optJSONObject(index) ?: continue
-            val id = item.optString("id")
-            val channelName = item.optString("name")
-            if (id.isBlank() || channelName.isBlank()) continue
-
+        val channels = ArrayList<CineHdChannel>(parsedChannels.size)
+        for (parsed in parsedChannels.values) {
             val streams = ArrayList<CineHdStream>()
-            item.optJSONObject("stream")?.let { primary ->
-                val url = primary.optString("url")
-                if (url.isNotBlank()) {
-                    streams.add(
-                        CineHdStream(
-                            url = url,
-                            quality = primary.optString("quality").takeIf { it.isNotBlank() },
-                            feed = primary.optString("feed").takeIf { it.isNotBlank() },
-                        )
-                    )
-                }
-            }
-            streams.addAll(streamsByChannel[id].orEmpty())
+            parsed.primaryStream?.let { streams.add(it) }
+            streams.addAll(streamsByChannel[parsed.id].orEmpty())
 
             val uniqueStreams = streams
                 .filter { it.url.isNotBlank() }
@@ -402,23 +430,19 @@ class CineHdLiveProvider : MainAPI() {
                 .take(MAX_STREAMS)
             if (uniqueStreams.isEmpty()) continue
 
-            val altNames = item.optJSONArray("alt_names").toStringList()
-            val categories = item.optJSONArray("categories").toStringList()
-
             channels.add(
                 CineHdChannel(
-                    id = id,
-                    name = channelName,
-                    altNames = altNames,
-                    country = item.optString("country").takeIf { it.isNotBlank() }
-                        ?.uppercase(Locale.ROOT),
-                    categories = categories,
-                    logo = item.optString("logo").takeIf { it.isNotBlank() },
+                    id = parsed.id,
+                    name = parsed.name,
+                    altNames = parsed.altNames,
+                    country = parsed.country,
+                    categories = parsed.categories,
+                    logo = parsed.logo,
                     streams = uniqueStreams,
                     searchText = normalize(
                         buildString {
-                            append(channelName)
-                            altNames.forEach { append(' ').append(it) }
+                            append(parsed.name)
+                            parsed.altNames.forEach { append(' ').append(it) }
                         }
                     ),
                 )
@@ -430,6 +454,156 @@ class CineHdLiveProvider : MainAPI() {
             byId = channels.associateBy { it.id },
             countryNames = countryNames,
         )
+    }
+
+    private fun readChannels(reader: JsonReader, out: MutableMap<String, ParsedChannel>) {
+        reader.beginArray()
+        while (reader.hasNext()) {
+            var id = ""
+            var channelName = ""
+            var altNames: List<String> = emptyList()
+            var country: String? = null
+            var categories: List<String> = emptyList()
+            var logo: String? = null
+            var primaryStream: CineHdStream? = null
+
+            reader.beginObject()
+            while (reader.hasNext()) {
+                when (reader.nextName()) {
+                    "id" -> id = reader.nextStringValue()
+                    "name" -> channelName = reader.nextStringValue()
+                    "alt_names" -> altNames = reader.nextStringList()
+                    "country" -> country = reader.nextStringValue().takeIf { it.isNotBlank() }
+                    "categories" -> categories = reader.nextStringList()
+                    "logo" -> logo = reader.nextStringValue().takeIf { it.isNotBlank() }
+                    "stream" -> primaryStream = reader.nextStream()
+                    else -> reader.skipValue()
+                }
+            }
+            reader.endObject()
+
+            if (id.isNotBlank() && channelName.isNotBlank()) {
+                out[id] = ParsedChannel(
+                    id = id,
+                    name = channelName,
+                    altNames = altNames,
+                    country = country?.uppercase(Locale.ROOT),
+                    categories = categories,
+                    logo = logo,
+                    primaryStream = primaryStream,
+                )
+            }
+        }
+        reader.endArray()
+    }
+
+    private fun readStreams(
+        reader: JsonReader,
+        out: MutableMap<String, MutableList<CineHdStream>>,
+    ) {
+        reader.beginArray()
+        while (reader.hasNext()) {
+            var channel = ""
+            var url = ""
+            var quality: String? = null
+            var feed: String? = null
+
+            reader.beginObject()
+            while (reader.hasNext()) {
+                when (reader.nextName()) {
+                    "channel" -> channel = reader.nextStringValue()
+                    "url" -> url = reader.nextStringValue()
+                    "quality" -> quality = reader.nextStringValue().takeIf { it.isNotBlank() }
+                    "feed" -> feed = reader.nextStringValue().takeIf { it.isNotBlank() }
+                    else -> reader.skipValue()
+                }
+            }
+            reader.endObject()
+
+            if (channel.isNotBlank() && url.isNotBlank()) {
+                out.getOrPut(channel) { mutableListOf() }
+                    .add(CineHdStream(url = url, quality = quality, feed = feed))
+            }
+        }
+        reader.endArray()
+    }
+
+    private fun readCountries(reader: JsonReader, out: MutableMap<String, String>) {
+        reader.beginArray()
+        while (reader.hasNext()) {
+            var code = ""
+            var countryName = ""
+
+            reader.beginObject()
+            while (reader.hasNext()) {
+                when (reader.nextName()) {
+                    "code" -> code = reader.nextStringValue()
+                    "name" -> countryName = reader.nextStringValue()
+                    else -> reader.skipValue()
+                }
+            }
+            reader.endObject()
+
+            if (code.isNotBlank()) {
+                out[code.uppercase(Locale.ROOT)] = countryName
+            }
+        }
+        reader.endArray()
+    }
+
+    private fun JsonReader.nextStream(): CineHdStream? {
+        if (peek() != JsonToken.BEGIN_OBJECT) {
+            skipValue()
+            return null
+        }
+
+        var url = ""
+        var quality: String? = null
+        var feed: String? = null
+
+        beginObject()
+        while (hasNext()) {
+            when (nextName()) {
+                "url" -> url = nextStringValue()
+                "quality" -> quality = nextStringValue().takeIf { it.isNotBlank() }
+                "feed" -> feed = nextStringValue().takeIf { it.isNotBlank() }
+                else -> skipValue()
+            }
+        }
+        endObject()
+
+        return if (url.isBlank()) null else CineHdStream(url, quality, feed)
+    }
+
+    private fun JsonReader.nextStringValue(): String {
+        return when (peek()) {
+            JsonToken.NULL -> {
+                nextNull()
+                ""
+            }
+            JsonToken.STRING, JsonToken.NUMBER -> nextString()
+            JsonToken.BOOLEAN -> nextBoolean().toString()
+            else -> {
+                skipValue()
+                ""
+            }
+        }
+    }
+
+    private fun JsonReader.nextStringList(): List<String> {
+        if (peek() != JsonToken.BEGIN_ARRAY) {
+            skipValue()
+            return emptyList()
+        }
+
+        val values = ArrayList<String>()
+        beginArray()
+        while (hasNext()) {
+            val value = nextStringValue()
+            if (value.isNotBlank()) values.add(value)
+        }
+        endArray()
+        return values
     }
 
     private fun encodePlayData(playData: CineHdPlayData): String {
@@ -470,17 +644,6 @@ class CineHdLiveProvider : MainAPI() {
 
         CineHdPlayData(root.optString("name"), streams)
     }.getOrNull()
-
-    private fun JSONArray?.toStringList(): List<String> {
-        if (this == null) return emptyList()
-
-        val values = ArrayList<String>(length())
-        for (index in 0 until length()) {
-            val value = optString(index)
-            if (value.isNotBlank()) values.add(value)
-        }
-        return values
-    }
 
     private fun CineHdChannel.toSearchResponse(): SearchResponse {
         val isArabic = isArabic()
@@ -556,6 +719,16 @@ class CineHdLiveProvider : MainAPI() {
         runCatching { File(dir, CACHE_FILE).writeText(text) }
     }
 }
+
+private data class ParsedChannel(
+    val id: String,
+    val name: String,
+    val altNames: List<String>,
+    val country: String?,
+    val categories: List<String>,
+    val logo: String?,
+    val primaryStream: CineHdStream?,
+)
 
 data class CineHdStream(
     val url: String,

@@ -1,4 +1,4 @@
-version = 1
+version = 2
 
 cloudstream {
     description = "CineHD Live TV - Arabic and international live channels"
