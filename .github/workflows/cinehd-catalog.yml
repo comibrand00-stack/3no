@@ -24,12 +24,37 @@ jobs:
 
       - name: Download live TV catalog
         run: |
-          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors --max-time 120 \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
-            -H "Accept: application/json" \
-            "https://cinehd.vc/api/live-tv" \
-            -o catalog/catalog.json
-          python3 -c 'import json,sys; d=json.load(open("catalog/catalog.json", encoding="utf-8")); c=len(d.get("channels") or []); s=len(d.get("streams") or []); print(f"channels={c} streams={s}"); sys.exit(0 if c > 1000 and s > 1000 else 1)'
+          fetch_direct() {
+            curl -fsSL --retry 3 --retry-delay 10 --retry-all-errors --max-time 120 \
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
+              -H "Accept: application/json" \
+              "https://cinehd.vc/api/live-tv" \
+              -o catalog/catalog.json
+          }
+
+          fetch_jina() {
+            echo "Direct fetch failed, retrying through r.jina.ai"
+            curl -fsSL --retry 3 --retry-delay 10 --retry-all-errors --max-time 180 \
+              -H "X-Return-Format: text" \
+              "https://r.jina.ai/https://cinehd.vc/api/live-tv" \
+              -o catalog/catalog.json
+          }
+
+          normalize() {
+            python3 -c 'p="catalog/catalog.json"; s=open(p, encoding="utf-8").read(); i=s.find("{"); assert i >= 0, "no JSON found"; open(p, "w", encoding="utf-8").write(s[i:])'
+          }
+
+          validate() {
+            python3 -c 'import json,sys; d=json.load(open("catalog/catalog.json", encoding="utf-8")); c=len(d.get("channels") or []); s=len(d.get("streams") or []); print(f"channels={c} streams={s}"); sys.exit(0 if c > 1000 and s > 1000 else 1)'
+          }
+
+          if fetch_direct && validate; then
+            echo "Downloaded directly from cinehd.vc"
+          else
+            fetch_jina
+            normalize
+            validate
+          fi
 
       - name: Commit and push
         run: |
