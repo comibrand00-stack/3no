@@ -1,10 +1,10 @@
 # MovieProvider Repository
 
-A CloudStream 3 plugin repository with four plugins: **Qesset** (قصة عشق movies/series from `qesset.com`), **BingeBang** (movies/series with Arabic subtitles from `bingebang.st`), **CIMALEEK** (all سيما ليك sections from `wwr433.b2cima.click`) and **alooyTV** (all alooytv lists: series, movies, anime from `ec.alooytv16.xyz`).
+A CloudStream 3 plugin repository with five plugins: **Qesset** (قصة عشق movies/series from `qesset.com`), **BingeBang** (movies/series with Arabic subtitles from `bingebang.st`), **CIMALEEK** (all سيما ليك sections from `wwr433.b2cima.click`), **alooyTV** (all alooytv lists: series, movies, anime from `ec.alooytv16.xyz`) and **CineHD Live** (live TV channels from `cinehd.vc`).
 
 ## Overview
 
-This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, the `BingeBang` plugin uses the `bingebang.st` API, the `Cimaleek` plugin covers every سيما ليك section from `wwr433.b2cima.click`, and the `AlooyTV` plugin covers every alooytv list from `ec.alooytv16.xyz`.
+This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, the `BingeBang` plugin uses the `bingebang.st` API, the `Cimaleek` plugin covers every سيما ليك section from `wwr433.b2cima.click`, the `AlooyTV` plugin covers every alooytv list from `ec.alooytv16.xyz`, and the `CineHDLive` plugin provides live TV channels from the `cinehd.vc` API.
 
 ## Features
 
@@ -27,6 +27,15 @@ This repository provides provider extensions for [CloudStream](https://github.co
 - **Subtitles**: **Arabic only** (server subtitles filtered to Arabic + SubtitleCat fallback)
 - **Download support**: Supported
 - **Chromecast**: Supported
+
+### CineHD Live
+
+- **Homepage sections**: Arabic channels row, 19 Arabic country rows, 10 category rows, 6 world-region rows and an "all channels" row
+- **Coverage**: all 8,000+ channels from the `cinehd.vc` live TV catalog across 250 countries
+- **Search**: Arabic and English, including Arabic alt names with letter normalization
+- **Channel page**: logo, country, categories and up to 15 stream sources per channel
+- **Streaming links**: direct HLS/DASH playback (no download, live only)
+- **Caching**: local 6-hour cache for the catalog to keep navigation fast
 
 ## Provider: Qesset
 
@@ -102,6 +111,25 @@ This repository provides provider extensions for [CloudStream](https://github.co
 - `load(url)` - Series episodes (`Ep#N` buttons with `?key=` stream tokens) or movie details
 - `loadLinks(data)` - Direct mp4 from the watch page plus Arabic subtitles (SubtitleCat)
 
+## Plugin: CineHD Live
+
+| Property | Value |
+|----------|-------|
+| **Name** | CineHD Live |
+| **Provider** | CineHD (`cinehd.vc`) |
+| **Supported Types** | Live |
+| **Language** | Arabic (`ar`) |
+| **Status** | Active |
+| **Chromecast** | Yes |
+| **Download** | No (live streams) |
+
+### Methods
+
+- `getMainPage()` - Arabic channels, 19 Arabic countries, 10 categories, 6 world regions and all channels from `GET /api/live-tv`
+- `search(query)` - Searches every channel by name and alt names (Arabic/English)
+- `load(url)` - Channel details: logo, country, categories and stream source count
+- `loadLinks(data)` - Emits up to 15 direct HLS/DASH sources per channel
+
 ## Installation
 
 ### Adding this Repository to CloudStream
@@ -112,7 +140,7 @@ This repository provides provider extensions for [CloudStream](https://github.co
    ```
    https://raw.githubusercontent.com/comibrand00-stack/3no/master/repo.json
    ```
-4. The **قصة عشق (Qesset)** and **BingeBang** providers will appear in the provider list
+4. The **قصة عشق (Qesset)**, **BingeBang**, **CIMALEEK**, **alooyTV** and **CineHD Live** providers will appear in the provider list
 
 ### Build from Source
 

@@ -69,6 +69,7 @@ subprojects {
             "Qesset" -> "com.example.qesset"
             "BingeBang" -> "com.example.bingebang"
             "AlooyTV" -> "com.example.alooytv"
+            "CineHDLive" -> "com.example.cinehdlive"
             else -> "com.example.movieprovider"
         }
 
