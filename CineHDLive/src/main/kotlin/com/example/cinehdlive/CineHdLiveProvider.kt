@@ -20,12 +20,16 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.StringReader
+import java.io.InputStream
+import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
 import java.util.Locale
 
 class CineHdLiveProvider : MainAPI() {
@@ -34,6 +38,9 @@ class CineHdLiveProvider : MainAPI() {
         private const val MAX_STREAMS = 15
         private const val CACHE_TTL_MS = 6 * 60 * 60 * 1000L
         private const val CACHE_FILE = "cinehd-live-catalog.json"
+        private const val MIN_CATALOG_BYTES = 1_000L
+        private const val MAX_CATALOG_BYTES = 64L * 1024 * 1024
+        private const val DOWNLOAD_BUFFER = 64 * 1024
         private const val MIRROR_CATALOG_URL =
             "https://raw.githubusercontent.com/comibrand00-stack/3no/catalog/catalog.json"
         private const val CATALOG_USER_AGENT =
@@ -314,8 +321,8 @@ class CineHdLiveProvider : MainAPI() {
             }
 
             // 1. Fresh local cache from a previous successful load.
-            readCache()?.let { text ->
-                runCatching { parseCatalog(text) }.getOrNull()?.let { catalog ->
+            readCache()?.let { file ->
+                runCatching { parseCatalog(file.inputStream().buffered()) }.getOrNull()?.let { catalog ->
                     cachedCatalog = catalog
                     cachedAt = System.currentTimeMillis()
                     return@withLock catalog
@@ -326,9 +333,7 @@ class CineHdLiveProvider : MainAPI() {
             val errors = ArrayList<String>(2)
             for (url in listOf(MIRROR_CATALOG_URL, siteCatalogUrl)) {
                 try {
-                    val body = fetchCatalogText(url)
-                    val catalog = parseCatalog(body)
-                    writeCache(body)
+                    val catalog = fetchCatalog(url)
                     cachedCatalog = catalog
                     cachedAt = System.currentTimeMillis()
                     return@withLock catalog
@@ -341,8 +346,8 @@ class CineHdLiveProvider : MainAPI() {
             }
 
             // 3. Last resort: expired local cache.
-            readCache(ignoreAge = true)?.let { text ->
-                runCatching { parseCatalog(text) }.getOrNull()?.let { catalog ->
+            readCache(ignoreAge = true)?.let { file ->
+                runCatching { parseCatalog(file.inputStream().buffered()) }.getOrNull()?.let { catalog ->
                     cachedCatalog = catalog
                     cachedAt = System.currentTimeMillis()
                     return@withLock catalog
@@ -355,7 +360,15 @@ class CineHdLiveProvider : MainAPI() {
         }
     }
 
-    private suspend fun fetchCatalogText(url: String): String {
+    /**
+     * Downloads the catalog through the raw response body.
+     *
+     * CloudStream's NiceResponse.text refuses responses bigger than 5 MB to avoid OOM,
+     * and the CineHD catalog is ~6.7 MB. Reading response.body directly bypasses that
+     * guard and keeps the JSON out of the heap: it is streamed to a temp file and parsed
+     * from disk afterwards.
+     */
+    private suspend fun fetchCatalog(url: String): CineHdCatalog = withContext(Dispatchers.IO) {
         val response = try {
             app.get(
                 url,
@@ -377,29 +390,81 @@ class CineHdLiveProvider : MainAPI() {
             throw ErrorLoadingException("HTTP ${response.code}")
         }
 
-        val body = response.text
-        if (body.isBlank()) {
-            throw ErrorLoadingException("empty response (HTTP ${response.code})")
-        }
-        if (!body.trimStart().startsWith("{")) {
-            val preview = body.take(80).replace('\n', ' ').replace('\r', ' ')
-            throw ErrorLoadingException("unexpected response (HTTP ${response.code}): $preview")
-        }
+        val body = response.body
+            ?: throw ErrorLoadingException("empty response (HTTP ${response.code})")
 
-        return body
+        val tempFile = File.createTempFile("cinehd-catalog-", ".tmp", tempDirectory())
+        try {
+            var total = 0L
+            body.byteStream().use { input ->
+                tempFile.outputStream().buffered(DOWNLOAD_BUFFER).use { output ->
+                    val buffer = ByteArray(DOWNLOAD_BUFFER)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        total += read
+                        if (total > MAX_CATALOG_BYTES) {
+                            throw ErrorLoadingException(
+                                "catalog too large (over ${MAX_CATALOG_BYTES / (1024 * 1024)} MB)"
+                            )
+                        }
+                        output.write(buffer, 0, read)
+                    }
+                }
+            }
+
+            if (total < MIN_CATALOG_BYTES) {
+                throw ErrorLoadingException("empty response (HTTP ${response.code})")
+            }
+
+            validateCatalogStart(tempFile, response.code)
+            val catalog = parseCatalog(tempFile.inputStream().buffered())
+            storeCache(tempFile)
+            catalog
+        } finally {
+            tempFile.delete()
+        }
+    }
+
+    private fun tempDirectory(): File {
+        val dir = cacheDir
+        if (dir != null && (dir.isDirectory || dir.mkdirs())) return dir
+        return File(System.getProperty("java.io.tmpdir") ?: ".")
+    }
+
+    private fun validateCatalogStart(file: File, code: Int) {
+        val buffer = ByteArray(256)
+        val read = file.inputStream().use { it.read(buffer) }
+        val prefix = if (read > 0) String(buffer, 0, read, StandardCharsets.UTF_8) else ""
+        val trimmed = prefix.trimStart('\uFEFF', ' ', '\t', '\r', '\n')
+        if (!trimmed.startsWith("{")) {
+            val preview = prefix.take(120).replace('\n', ' ').replace('\r', ' ')
+            throw ErrorLoadingException("unexpected response (HTTP $code): $preview")
+        }
+    }
+
+    private fun storeCache(tempFile: File) {
+        val dir = cacheDir ?: return
+        runCatching {
+            val target = File(dir, CACHE_FILE)
+            if (target.exists()) target.delete()
+            if (!tempFile.renameTo(target)) {
+                tempFile.copyTo(target, overwrite = true)
+            }
+        }
     }
 
     private fun hostOf(url: String): String {
         return url.substringAfter("://").substringBefore('/')
     }
 
-    private fun parseCatalog(text: String): CineHdCatalog {
+    private fun parseCatalog(input: InputStream): CineHdCatalog {
         val parsedChannels = LinkedHashMap<String, ParsedChannel>()
         val streamsByChannel = HashMap<String, MutableList<CineHdStream>>()
         val countryNames = HashMap<String, String>()
 
         try {
-            JsonReader(StringReader(text)).use { reader ->
+            JsonReader(InputStreamReader(input, StandardCharsets.UTF_8)).use { reader ->
                 reader.isLenient = true
                 reader.beginObject()
                 while (reader.hasNext()) {
@@ -704,19 +769,14 @@ class CineHdLiveProvider : MainAPI() {
             .trim()
     }
 
-    private fun readCache(ignoreAge: Boolean = false): String? {
+    private fun readCache(ignoreAge: Boolean = false): File? {
         val dir = cacheDir ?: return null
         val file = File(dir, CACHE_FILE)
-        if (!file.exists()) return null
+        if (!file.isFile || file.length() < MIN_CATALOG_BYTES) return null
         if (!ignoreAge && System.currentTimeMillis() - file.lastModified() > CACHE_TTL_MS) {
             return null
         }
-        return runCatching { file.readText() }.getOrNull()
-    }
-
-    private fun writeCache(text: String) {
-        val dir = cacheDir ?: return
-        runCatching { File(dir, CACHE_FILE).writeText(text) }
+        return file
     }
 }
 
