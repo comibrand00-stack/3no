@@ -258,7 +258,18 @@ class CineHdLiveProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse? {
         val catalog = getCatalog()
-        val channel = catalog.byId[url] ?: return null
+
+        // CloudStream applies fixUrl() before calling load(), so a bare channel id such as
+        // "beINSportsHaber.tr" arrives as "https://cinehd.vc/beINSportsHaber.tr".
+        // Strip that prefix, and also accept raw ids from search/library links.
+        val channelId = url
+            .removePrefix("${mainUrl.trimEnd('/')}/")
+            .substringBefore('?')
+            .substringBefore('#')
+            .trimEnd('/')
+            .substringAfterLast('/')
+
+        val channel = catalog.byId[channelId] ?: catalog.byId[url] ?: return null
         val playData = CineHdPlayData(channel.name, channel.streams)
 
         return newLiveStreamLoadResponse(
