@@ -1,10 +1,10 @@
 # MovieProvider Repository
 
-A CloudStream 3 plugin repository with five plugins: **Qesset** (قصة عشق movies/series from `qesset.com`), **BingeBang** (movies/series with Arabic subtitles from `bingebang.st`), **CIMALEEK** (all سيما ليك sections from `wwr433.b2cima.click`), **alooyTV** (all alooytv lists: series, movies, anime from `ec.alooytv16.xyz`) and **CineHD Live** (live TV channels from `cinehd.vc`).
+A CloudStream 3 plugin repository with four plugins: **Qesset** (قصة عشق movies/series from `qesset.com`), **BingeBang** (movies/series with Arabic subtitles from `bingebang.st`), **alooyTV** (all alooytv lists: series, movies, anime from `ec.alooytv16.xyz`) and **CineHD Live** (live TV channels from `cinehd.vc`).
 
 ## Overview
 
-This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, the `BingeBang` plugin uses the `bingebang.st` API, the `Cimaleek` plugin covers every سيما ليك section from `wwr433.b2cima.click`, the `AlooyTV` plugin covers every alooytv list from `ec.alooytv16.xyz`, and the `CineHDLive` plugin provides live TV channels from the `cinehd.vc` API.
+This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, the `BingeBang` plugin uses the `bingebang.st` API, the `AlooyTV` plugin covers every alooytv list from `ec.alooytv16.xyz`, and the `CineHDLive` plugin provides live TV channels from the `cinehd.vc` API.
 
 ## Features
 
@@ -73,25 +73,6 @@ This repository provides provider extensions for [CloudStream](https://github.co
 - `load(url)` - Movie/series details (including seasons/episodes) from the `data-detail-payload` block
 - `loadLinks(data)` - Decrypts the player config, resolves **all** servers via `/api/player/sources` + `/api/player/resolve`, emits **Arabic subtitles only
 
-## Plugin: CIMALEEK
-
-| Property | Value |
-|----------|-------|
-| **Name** | CIMALEEK |
-| **Provider** | Cimaleek (`wwr433.b2cima.click`) |
-| **Supported Types** | Movie, TvSeries |
-| **Language** | Arabic (`ar`) |
-| **Status** | Active |
-| **Chromecast** | Yes |
-| **Download** | Yes |
-
-### Methods
-
-- `getMainPage()` - All 14 site sections (movies, series, recent, trending, all movie/series categories)
-- `search(query)` - Search via `/?s=<query>`
-- `load(url)` - Movie/series details (including season episodes from `/seasons/` + `/episodes/`)
-- `loadLinks(data)` - Watch-page sources plus lala player API, with `loadExtractor` fallback and Arabic subtitles (SubtitleCat)
-
 ## Plugin: alooyTV
 
 | Property | Value |
@@ -140,7 +121,7 @@ This repository provides provider extensions for [CloudStream](https://github.co
    ```
    https://raw.githubusercontent.com/comibrand00-stack/3no/master/repo.json
    ```
-4. The **قصة عشق (Qesset)**, **BingeBang**, **CIMALEEK**, **alooyTV** and **CineHD Live** providers will appear in the provider list
+4. The **قصة عشق (Qesset)**, **BingeBang**, **alooyTV** and **CineHD Live** providers will appear in the provider list
 
 ### Build from Source
 
