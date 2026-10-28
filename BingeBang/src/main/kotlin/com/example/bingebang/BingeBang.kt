@@ -5,6 +5,7 @@ import com.lagradost.cloudstream3.utils.*
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
@@ -366,51 +367,53 @@ class BingeBang : MainAPI() {
             null
         } ?: return false
 
+        // Resolve every mirror in parallel: the site exposes up to a dozen servers per title
+        // and resolving them one by one can exceed the player's link-loading timeout, which
+        // left only the first server visible in the app.
+        val serverLinks = coroutineScope {
+            (0 until sources.length()).map { index ->
+                async {
+                    val server = sources.optJSONObject(index) ?: return@async null
+                    val source = server.optString("source_url").ifBlank { null } ?: return@async null
+                    val resolved = resolveServer(source, headers, ticket) ?: return@async null
+                    val streamUrl = resolved.optString("url").ifBlank { null } ?: return@async null
+                    ResolvedServer(
+                        index = index,
+                        label = server.optString("label").ifBlank { "Server ${index + 1}" },
+                        quality = server.optString("quality").ifBlank { resolved.optString("quality") },
+                        streamUrl = streamUrl,
+                        isHls = resolved.optString("type").ifBlank {
+                            if (streamUrl.contains(".m3u8", true)) "hls" else "mp4"
+                        }.contains("hls", true),
+                        subtitles = resolved.optJSONArray("subtitles"),
+                    )
+                }
+            }.awaitAll().filterNotNull()
+        }
+
+        if (serverLinks.isEmpty()) return false
+
         var found = false
-        val seen = mutableSetOf<String>()
-
-        for (i in 0 until sources.length()) {
-            val server = sources.optJSONObject(i) ?: continue
-            val source = server.optString("source_url").ifBlank { null } ?: continue
-
-            val resolved = try {
-                val path = "player/resolve?src=" + URLEncoder.encode(source, "UTF-8")
-                val body = app.get(apiUrl(path), headers = headers).text
-                JSONObject(decryptPayload(body, ticket))
-            } catch (_: Exception) {
-                continue
-            }
-
-            val streamUrl = resolved.optString("url").ifBlank { null } ?: continue
-            if (!seen.add(streamUrl)) continue
-
-            val isHls = resolved.optString("type").ifBlank {
-                if (streamUrl.contains(".m3u8", true)) "hls" else "mp4"
-            }.contains("hls", true)
-
-            val label = listOfNotNull(
-                server.optString("label").ifBlank { null },
-                server.optString("quality").ifBlank { null },
-            ).joinToString(" ").ifBlank { name }
-
+        for (server in serverLinks.sortedBy { it.index }) {
             callback(
                 newExtractorLink(
-                    source = name,
-                    name = label,
-                    url = streamUrl,
-                    type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
+                    source = "$name · ${server.label}",
+                    name = server.quality.ifBlank { server.label },
+                    url = server.streamUrl,
+                    type = if (server.isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
                 ) {
                     this.referer = "$mainUrl/"
                     this.headers = mapOf(
                         "Referer" to "$mainUrl/",
                         "User-Agent" to BROWSER_UA,
                     )
+                    this.quality = qualityRank(server.quality)
                 }
             )
             found = true
 
             // Arabic subtitles only
-            val subs = resolved.optJSONArray("subtitles") ?: continue
+            val subs = server.subtitles ?: continue
             for (j in 0 until subs.length()) {
                 val sub = subs.optJSONObject(j) ?: continue
                 val subUrl = sub.optString("url").ifBlank { null } ?: continue
@@ -506,6 +509,47 @@ class BingeBang : MainAPI() {
         "Accept" to "application/json, text/plain, */*",
         "Referer" to "$mainUrl/",
     )
+
+    private data class ResolvedServer(
+        val index: Int,
+        val label: String,
+        val quality: String,
+        val streamUrl: String,
+        val isHls: Boolean,
+        val subtitles: JSONArray?,
+    )
+
+    /** resolves a single mirror; retried once because the CDN occasionally returns 5xx */
+    private suspend fun resolveServer(
+        source: String,
+        headers: Map<String, String>,
+        ticket: String,
+    ): JSONObject? {
+        repeat(2) { attempt ->
+            try {
+                val path = "player/resolve?src=" + URLEncoder.encode(source, "UTF-8")
+                val body = app.get(apiUrl(path), headers = headers).text
+                val json = JSONObject(decryptPayload(body, ticket))
+                if (json.optString("url").isNotBlank()) return json
+            } catch (_: Exception) {
+                // fall through to the retry
+            }
+            if (attempt == 0) delay(250)
+        }
+        return null
+    }
+
+    private fun qualityRank(text: String): Int {
+        val value = text.lowercase()
+        return when {
+            value.contains("2160") || value.contains("4k") -> Qualities.P2160.value
+            value.contains("1080") || value.contains("full hd") -> Qualities.P1080.value
+            value.contains("720") || value.contains("hd") -> Qualities.P720.value
+            value.contains("480") || value.contains("sd") -> Qualities.P480.value
+            value.contains("360") -> Qualities.P360.value
+            else -> Qualities.Unknown.value
+        }
+    }
 
     private fun playerHeaders(playUrl: String, ticket: String): Map<String, String> = mapOf(
         "User-Agent" to BROWSER_UA,
