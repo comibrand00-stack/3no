@@ -5,6 +5,7 @@ import com.lagradost.cloudstream3.utils.*
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import org.json.JSONObject
 import org.jsoup.nodes.Document
 import java.util.Base64
 
@@ -183,23 +184,45 @@ class Qesset : MainAPI() {
             }
         }
         val json = decoded.replace("\\/", "/")
-        val serverRx = Regex("""\{"name":"([^"]+)","id":"([^"]+)"\}""")
-        val servers = serverRx.findAll(json).toList()
+        val servers = parseServers(json)
         if (servers.isEmpty()) return false
 
         var found = false
         val seen = mutableSetOf<String>()
         val embedReferer = "https://qesen.net/"
-        for (m in servers) {
-            val embed = buildEmbed(m.groupValues[1], m.groupValues[2]) ?: continue
+        for ((serverName, serverId) in servers) {
+            val embed = buildEmbed(serverName, serverId) ?: continue
             if (!seen.add(embed)) continue
             try {
-                val ok = resolveEmbed(embed, embedReferer, subtitleCallback, callback, seen, m.groupValues[1])
+                val ok = resolveEmbed(embed, embedReferer, subtitleCallback, callback, seen, serverName)
                 found = ok || found
             } catch (_: Exception) {
             }
         }
         return found
+    }
+
+    private fun parseServers(json: String): List<Pair<String, String>> {
+        val servers = mutableListOf<Pair<String, String>>()
+        try {
+            val array = JSONObject(json).optJSONArray("servers")
+            if (array != null) {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val name = item.optString("name").trim()
+                    val id = item.optString("id").trim()
+                    if (name.isNotEmpty() && id.isNotEmpty()) servers.add(name to id)
+                }
+            }
+        } catch (_: Exception) {
+        }
+        if (servers.isNotEmpty()) return servers
+
+        // Fallback for slightly malformed JSON that still contains server objects.
+        val serverRx = Regex("""\{"name":"([^"]+)","id":"([^"]+)"\}""")
+        return serverRx.findAll(json)
+            .map { it.groupValues[1] to it.groupValues[2] }
+            .toList()
     }
 
     private fun buildEmbed(serverName: String, id: String): String? = when (serverName) {

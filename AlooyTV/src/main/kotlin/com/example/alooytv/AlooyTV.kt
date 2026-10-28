@@ -68,6 +68,9 @@ class AlooyTV : MainAPI() {
         val PROTO_RX = Regex("""<source[^>]+src="(//[^"]+)"""")
         // download button carries the same mp4 base64-encoded
         val DL_RX = Regex("""download_video\.php\?video_url=([A-Za-z0-9+/=]+)""")
+        // some episodes are served through /m3u8/?src=...; the real HLS URL is in the player page
+        val M3U8_PAGE_RX = Regex("""(?:const|let|var)\s+url\s*=\s*["']([^"']+\.m3u8[^"']*)["']""")
+        val M3U8_URL_RX = Regex("""["'](https?://[^"']+\.m3u8[^"']*)["']""")
         val HOST_RX = Regex("""^https?://[^/]*\.[A-Za-z]{2,}""")
         val TITLE_TAG_RX = Regex("""<title>(.*?)</title>""", RegexOption.DOT_MATCHES_ALL)
         val OGIMG_RX = Regex("""<meta property="og:image" content="([^"]+)"""")
@@ -296,7 +299,19 @@ class AlooyTV : MainAPI() {
                 } catch (_: Exception) {
                     null
                 }
-                if (decoded != null && decoded.startsWith("http")) emit(decoded)
+                if (decoded != null) {
+                    val target = decoded.substringBefore("#").trim()
+                    if (target.startsWith("http")) {
+                        emit(target)
+                    } else if (
+                        target.startsWith("/") ||
+                        target.startsWith("m3u8") ||
+                        target.startsWith("./")
+                    ) {
+                        // /m3u8/?src=... is a small player page, not the stream itself
+                        resolveM3u8Page(target, pageUrl)?.let { emit(it) }
+                    }
+                }
             }
         }
 
@@ -369,6 +384,22 @@ class AlooyTV : MainAPI() {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    private suspend fun resolveM3u8Page(path: String, referer: String): String? {
+        val html = try {
+            withTimeoutOrNull(SERVER_TIMEOUT_MS) {
+                app.get(absUrl(path), headers = pageHeaders(referer)).text
+            }
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        val match = M3U8_PAGE_RX.find(html) ?: M3U8_URL_RX.find(html) ?: return null
+        return match.groupValues[1]
+            .replace("\\/", "/")
+            .replace("&amp;", "&")
+            .trim()
+            .takeIf { it.isNotBlank() }
+    }
 
     private fun pageHeaders(referer: String = "$mainUrl/"): Map<String, String> = mapOf(
         "User-Agent" to BROWSER_UA,
