@@ -228,7 +228,12 @@ class BingeBang : MainAPI() {
             (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
         }.orEmpty()
 
-        val episodes = fetchEpisodes(playUrl, title, seasonEntries)
+        val episodes = fetchEpisodes(
+            playUrl,
+            title,
+            seasonEntries,
+            obj.optInt("id", 0).takeIf { it > 0 },
+        )
         if (episodes.isEmpty()) throw ErrorLoadingException("BingeBang: no episodes")
 
         val seasonNames = seasonEntries.mapNotNull { entry ->
@@ -255,6 +260,7 @@ class BingeBang : MainAPI() {
         playUrl: String,
         showTitle: String,
         seasonEntries: List<JSONObject>,
+        mediaId: Int?,
     ): List<Episode> {
         val playerUrl = "$playUrl/1/1"
         val cfg = try {
@@ -262,71 +268,132 @@ class BingeBang : MainAPI() {
         } catch (_: Exception) {
             null
         }
+        val payload = cfg?.let { sliceJson(it, it.indexOf("__BB_EPISODES__")) }
 
-        val episodesJson = cfg?.let { sliceJson(it, it.indexOf("__BB_EPISODES__")) }
-        if (episodesJson != null) {
-            val built = buildEpisodes(episodesJson, playUrl, showTitle)
-            if (built.isNotEmpty()) return built
+        // The embedded __BB_EPISODES__ blob only contains the currently opened season; the
+        // remaining seasons must be requested from `/api/tv/{id}/season/{n}`.
+        var seasonApi: String? = null
+        val inline = mutableMapOf<Int, JSONArray>()
+        val seasons = sortedSetOf<Int>()
+
+        if (payload != null) {
+            try {
+                val root = JSONObject(payload)
+                seasonApi = root.optString("seasonApi").ifBlank { null }
+                val list = root.optJSONArray("seasons")
+                if (list != null) {
+                    for (i in 0 until list.length()) {
+                        val season = list.optJSONObject(i) ?: continue
+                        val number = season.optInt("season", i + 1)
+                        if (number <= 0) continue
+                        seasons += number
+                        season.optJSONArray("episodes")?.let { inline[number] = it }
+                    }
+                }
+            } catch (_: Exception) {
+                // fall back to the detail payload below
+            }
         }
 
-        // fallback: build plain episode links from the season block
-        val out = mutableListOf<Episode>()
         for (season in seasonEntries) {
             val number = season.optInt("season_number", 0)
-            if (number <= 0) continue
-            val count = season.optInt("episode_count", 0)
-            if (count <= 0) continue
-            for (episode in 1..count) {
-                out += newEpisode(
-                    dataJson(
-                        mapOf(
-                            "u" to "$playUrl/$number/$episode",
-                            "t" to showTitle,
-                            "s" to number,
-                            "e" to episode,
-                        )
-                    )
-                ) {
-                    this.season = number
-                    this.episode = episode
+            if (number > 0) seasons += number
+        }
+
+        val apiBase = seasonApi ?: mediaId?.let { "/api/tv/$it/season/" }
+        if (seasons.isEmpty()) return emptyList()
+
+        val out = mutableListOf<Episode>()
+        for (number in seasons) {
+            var built = emptyList<Episode>()
+
+            if (apiBase != null) {
+                built = try {
+                    val body = app.get(
+                        absUrl(apiBase.trimEnd('/') + "/" + number),
+                        headers = apiHeaders(),
+                    ).text
+                    buildSeasonEpisodes(JSONObject(body).optJSONArray("episodes"), number, playUrl, showTitle)
+                } catch (_: Exception) {
+                    emptyList()
                 }
+            }
+            if (built.isEmpty()) built = buildSeasonEpisodes(inline[number], number, playUrl, showTitle)
+            if (built.isEmpty()) built = genericEpisodes(playUrl, showTitle, seasonEntries, number)
+            out += built
+        }
+        return out
+    }
+
+    private fun buildSeasonEpisodes(
+        list: JSONArray?,
+        seasonNumber: Int,
+        playUrl: String,
+        showTitle: String,
+    ): List<Episode> {
+        if (list == null) return emptyList()
+        val out = mutableListOf<Episode>()
+        for (j in 0 until list.length()) {
+            val entry = list.optJSONObject(j) ?: continue
+            val episode = entry.optInt("episode_number", entry.optInt("episode", j + 1))
+            if (episode <= 0) continue
+            val link = entry.optString("play_url").ifBlank {
+                entry.optString("url").ifBlank { "$playUrl/$seasonNumber/$episode" }
+            }
+            val data = dataJson(
+                mapOf(
+                    "u" to absUrl(link),
+                    "t" to showTitle,
+                    "s" to seasonNumber,
+                    "e" to episode,
+                )
+            )
+            out += newEpisode(data) {
+                this.season = seasonNumber
+                this.episode = episode
+                this.name = entry.optString("name").ifBlank {
+                    entry.optString("title").ifBlank { null }
+                }
+                this.posterUrl = image(
+                    entry.optString("still_url").ifBlank {
+                        entry.optString("still_path").ifBlank {
+                            entry.optString("still").ifBlank { null }
+                        }
+                    }
+                )
+                this.description = entry.optString("overview").ifBlank {
+                    entry.optString("plot").ifBlank { null }
+                }
+                this.runTime = parseMinutes(entry.optString("runtime"))
             }
         }
         return out
     }
 
-    private fun buildEpisodes(payload: String, playUrl: String, showTitle: String): List<Episode> {
-        val root = JSONObject(payload)
-        val seasons = root.optJSONArray("seasons") ?: return emptyList()
-        val out = mutableListOf<Episode>()
-
-        for (i in 0 until seasons.length()) {
-            val season = seasons.optJSONObject(i) ?: continue
-            val number = season.optInt("season", i + 1)
-            val list = season.optJSONArray("episodes") ?: continue
-            for (j in 0 until list.length()) {
-                val entry = list.optJSONObject(j) ?: continue
-                val episode = entry.optInt("episode", j + 1)
-                val link = entry.optString("url").ifBlank { "$playUrl/$number/$episode" }
-                val data = dataJson(
+    private fun genericEpisodes(
+        playUrl: String,
+        showTitle: String,
+        seasonEntries: List<JSONObject>,
+        number: Int,
+    ): List<Episode> {
+        val count = seasonEntries.firstOrNull { it.optInt("season_number", 0) == number }
+            ?.optInt("episode_count", 0) ?: 0
+        if (count <= 0) return emptyList()
+        return (1..count).map { episode ->
+            newEpisode(
+                dataJson(
                     mapOf(
-                        "u" to absUrl(link),
+                        "u" to "$playUrl/$number/$episode",
                         "t" to showTitle,
                         "s" to number,
                         "e" to episode,
                     )
                 )
-                out += newEpisode(data) {
-                    this.season = number
-                    this.episode = episode
-                    this.name = entry.optString("title").ifBlank { null }
-                    this.posterUrl = image(entry.optString("still"))
-                    this.description = entry.optString("plot").ifBlank { null }
-                    this.runTime = parseMinutes(entry.optString("runtime"))
-                }
+            ) {
+                this.season = number
+                this.episode = episode
             }
         }
-        return out
     }
 
     // ---------------------------------------------------------------- links
