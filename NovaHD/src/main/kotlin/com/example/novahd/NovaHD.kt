@@ -9,6 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * NovaHD provider (novahd.cc).
@@ -73,6 +74,10 @@ class NovaHD : MainAPI() {
 
     // /api/sources refuses to expose every mirror unless the caller looks like a real visitor
     private val visitorId: String by lazy { UUID.randomUUID().toString() }
+
+    // English titles are only needed for the SubtitleCat fallback; cache them per title so
+    // binge-watching a series fetches the (large) English payload at most once.
+    private val englishTitleCache = ConcurrentHashMap<String, String>()
 
     private val movieGenres = listOf(
         "أكشن" to "Action",
@@ -415,12 +420,20 @@ class NovaHD : MainAPI() {
 
     // ---------------------------------------------------------------- arabic subs
 
-    private suspend fun englishTitle(ref: MediaRef): String? = try {
-        val kind = if (ref.type == "show") "shows" else "movies"
-        val obj = JSONObject(app.get(apiUrl("$kind/${ref.id}?lang=$EN_LANG"), headers = apiHeaders()).text)
-        obj.optString("title").ifBlank { null }
-    } catch (_: Exception) {
-        null
+    private suspend fun englishTitle(ref: MediaRef): String? {
+        val key = "${ref.type}:${ref.id}"
+        if (englishTitleCache.containsKey(key)) {
+            return englishTitleCache[key]?.ifBlank { null }
+        }
+        val title = try {
+            val kind = if (ref.type == "show") "shows" else "movies"
+            val obj = JSONObject(app.get(apiUrl("$kind/${ref.id}?lang=$EN_LANG"), headers = apiHeaders()).text)
+            obj.optString("title").ifBlank { null }
+        } catch (_: Exception) {
+            null
+        }
+        englishTitleCache[key] = title.orEmpty()
+        return title
     }
 
     private suspend fun findArabicSubtitle(
@@ -552,7 +565,7 @@ class NovaHD : MainAPI() {
     private fun qualityRank(text: String): Int {
         val value = text.lowercase()
         return when {
-            value.contains("2160") || value.contains("4k") -> Qualities.P2160.value
+            value.contains("2160") || value.contains("4k") || value.contains("uhd") -> Qualities.P2160.value
             value.contains("1080") || value.contains("full hd") || value.contains("fhd") ->
                 Qualities.P1080.value
             value.contains("720") || value.contains("hd") -> Qualities.P720.value
