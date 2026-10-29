@@ -5,6 +5,9 @@ import com.lagradost.cloudstream3.utils.*
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
@@ -17,9 +20,13 @@ import java.util.concurrent.ConcurrentHashMap
  * The site is an SPA backed by a JSON API. Every catalogue call accepts `lang=ar-SA` which
  * makes the API return Arabic titles and descriptions, so the whole UI is Arabic.
  *
- * `/api/sources` has one sharp edge: it only returns the full mirror list (and subtitles)
- * when the request carries an `x-nova-visitor` UUID header. Without it the API silently
- * falls back to a single Falcon/1080p source.
+ * `/api/sources` has two sharp edges:
+ *  - it only returns the full mirror list (and subtitles) when the request carries an
+ *    `x-nova-visitor` UUID header. Without it the API silently falls back to a single
+ *    Falcon/1080p source;
+ *  - it is rate limited per IP (~a dozen requests then 429/403, followed by a few minutes
+ *    where every reply is the Falcon fallback). That is why this plugin serialises the
+ *    calls, keeps a per-episode cache, honours `Retry-After` and retries the Falcon answer.
  */
 class NovaHD : MainAPI() {
     override var mainUrl = "https://novahd.cc"
@@ -40,6 +47,21 @@ class NovaHD : MainAPI() {
         const val POSTER_BASE = "https://image.tmdb.org/t/p/w500"
         const val BACKDROP_BASE = "https://image.tmdb.org/t/p/w780"
         const val ROW_BATCH_SIZE = 6
+
+        /** `/api/sources` answers are cached per episode; CloudStream also caches for 20 min. */
+        const val SOURCES_TTL_MS = 30 * 60 * 1000L
+
+        /** Minimum gap between two `/api/sources` calls, keeps us under the per-IP limit. */
+        const val SOURCES_MIN_INTERVAL_MS = 1_500L
+
+        /** How many times a Falcon-only (degraded) answer is retried before giving up. */
+        const val SOURCES_ATTEMPTS = 3
+
+        /** Backoff between Falcon-only retries; attempts use 1.6s and 3.2s. */
+        const val SOURCES_RETRY_DELAY_MS = 1_600L
+
+        /** Never block a `loadLinks` call for longer than this, even if the API asks more. */
+        const val SOURCES_MAX_BLOCK_MS = 20_000L
 
         val genreNames = mapOf(
             "Action" to "أكشن",
@@ -74,6 +96,13 @@ class NovaHD : MainAPI() {
 
     // /api/sources refuses to expose every mirror unless the caller looks like a real visitor
     private val visitorId: String by lazy { UUID.randomUUID().toString() }
+
+    // /api/sources is rate limited per IP, so it gets its own serialised queue and visitor id.
+    private val sourcesMutex = Mutex()
+    private val sourcesCache = ConcurrentHashMap<String, CachedSources>()
+    @Volatile private var sourcesVisitor = UUID.randomUUID().toString()
+    @Volatile private var lastSourcesRequestAt = 0L
+    @Volatile private var sourcesBlockedUntil = 0L
 
     // English titles are only needed for the SubtitleCat fallback; cache them per title so
     // binge-watching a series fetches the (large) English payload at most once.
@@ -334,32 +363,33 @@ class NovaHD : MainAPI() {
         val season = info?.optInt("s", 0)?.takeIf { it > 0 } ?: ref.season
         val episode = info?.optInt("e", 0)?.takeIf { it > 0 } ?: ref.episode
 
+        val cacheKey = "${ref.type}:${ref.id}:${season ?: 0}:${episode ?: 0}"
         val path = if (ref.type == "show") {
             "sources?type=show&tmdbId=${ref.id}&season=${season ?: 1}&episode=${episode ?: 1}&lang=$API_LANG"
         } else {
             "sources?type=movie&tmdbId=${ref.id}&lang=$API_LANG"
         }
 
-        val root = try {
-            JSONObject(app.get(apiUrl(path), headers = apiHeaders()).text)
-        } catch (_: Exception) {
-            null
-        } ?: return false
+        val payload = fetchSources(cacheKey, path) ?: return false
 
         val emitted = mutableSetOf<String>()
         val addSubtitle = { rawUrl: String ->
             val absolute = absUrl(rawUrl)
             if (absolute.isNotBlank() && emitted.add(absolute)) {
-                subtitleCallback(
-                    SubtitleFile("Arabic", absolute).apply {
-                        this.headers = mapOf("User-Agent" to BROWSER_UA)
-                    }
-                )
+                try {
+                    subtitleCallback(
+                        SubtitleFile("Arabic", absolute).apply {
+                            this.headers = mapOf("User-Agent" to BROWSER_UA)
+                        }
+                    )
+                } catch (_: Exception) {
+                    // One broken subtitle must never abort the whole list.
+                }
             }
         }
 
         var found = false
-        val sources = root.optJSONArray("sources")
+        val sources = payload.sources
         if (sources != null) {
             for (i in 0 until sources.length()) {
                 val source = sources.optJSONObject(i) ?: continue
@@ -383,23 +413,27 @@ class NovaHD : MainAPI() {
                     for (key in extra.keys()) linkHeaders[key] = extra.optString(key)
                 }
 
-                callback(
-                    newExtractorLink(
-                        source = "$name · $provider",
-                        name = label.ifBlank { quality.ifBlank { provider } },
-                        url = streamUrl,
-                        type = linkType,
-                    ) {
-                        this.referer = "$mainUrl/"
-                        this.headers = linkHeaders
-                        this.quality = qualityRank(quality)
-                    }
-                )
-                found = true
+                try {
+                    callback(
+                        newExtractorLink(
+                            source = "$name · $provider",
+                            name = label.ifBlank { quality.ifBlank { provider } },
+                            url = streamUrl,
+                            type = linkType,
+                        ) {
+                            this.referer = "$mainUrl/"
+                            this.headers = linkHeaders
+                            this.quality = qualityRank(quality)
+                        }
+                    )
+                    found = true
+                } catch (_: Exception) {
+                    // A single malformed mirror must not drop the rest of the list.
+                }
             }
         }
 
-        val subtitles = root.optJSONArray("subtitles")
+        val subtitles = payload.subtitles
         if (subtitles != null) {
             for (i in 0 until subtitles.length()) {
                 val sub = subtitles.optJSONObject(i) ?: continue
@@ -422,6 +456,155 @@ class NovaHD : MainAPI() {
         }
 
         return found
+    }
+
+    // ---------------------------------------------------------------- sources fetch
+
+    private class SourcePayload(val sources: JSONArray?, val subtitles: JSONArray?) {
+        /** The API degrades to a single Falcon/1080p mirror while the caller's IP is throttled. */
+        fun isFalconOnly(): Boolean {
+            val list = sources ?: return false
+            if (list.length() > 1) return false
+            val first = list.optJSONObject(0) ?: return false
+            return first.optString("provider").contains("falcon", true) ||
+                first.optString("name").contains("falcon", true)
+        }
+    }
+
+    private class CachedSources(val payload: SourcePayload, val at: Long)
+
+    /**
+     * Serialised, cached and retried `/api/sources` call.
+     *
+     * The endpoint tolerates roughly a dozen calls per minute and then answers 429/403 and,
+     * for a few minutes after that, only the Falcon fallback. CloudStream fires `loadLinks`
+     * for the current and the next episode and keeps links for 20 minutes, so a single
+     * throttled answer used to stick to the user as “one server only”. Everything here
+     * exists to make that impossible: one request at a time, a per-episode cache and a
+     * retry whenever the reply is the degraded single-Falcon list.
+     */
+    private suspend fun fetchSources(key: String, path: String): SourcePayload? {
+        sourcesCache[key]?.let { cached ->
+            if (System.currentTimeMillis() - cached.at < SOURCES_TTL_MS) return cached.payload
+        }
+
+        // A previous call may have hit the limit; wait it out before joining the queue.
+        awaitSourcesWindow()
+
+        return sourcesMutex.withLock {
+            sourcesCache[key]?.let { cached ->
+                if (System.currentTimeMillis() - cached.at < SOURCES_TTL_MS) {
+                    return@withLock cached.payload
+                }
+            }
+
+            val gap = SOURCES_MIN_INTERVAL_MS - (System.currentTimeMillis() - lastSourcesRequestAt)
+            if (gap > 0) delay(gap)
+
+            var fallback: SourcePayload? = null
+            for (attempt in 0 until SOURCES_ATTEMPTS) {
+                if (attempt > 0) {
+                    // The site retries with a fresh visitor id and an NDJSON accept.
+                    sourcesVisitor = UUID.randomUUID().toString()
+                    delay(SOURCES_RETRY_DELAY_MS * attempt)
+                    awaitSourcesWindow()
+                }
+                val payload = requestSources(path, ndjson = attempt > 0) ?: continue
+                if (!payload.isFalconOnly()) {
+                    cacheSources(key, payload)
+                    return@withLock payload
+                }
+                fallback = payload
+            }
+            // Never cache the degraded Falcon answer, so the next open tries again.
+            fallback
+        }
+    }
+
+    private suspend fun requestSources(path: String, ndjson: Boolean): SourcePayload? {
+        val headers = apiHeaders().toMutableMap()
+        headers["Accept"] =
+            if (ndjson) "application/x-ndjson" else "application/json, text/plain, */*"
+        headers["x-nova-visitor"] = sourcesVisitor
+
+        lastSourcesRequestAt = System.currentTimeMillis()
+        val response = try {
+            app.get(apiUrl(path), headers = headers, timeout = 45)
+        } catch (_: Exception) {
+            return null
+        }
+
+        val body = try {
+            response.text
+        } catch (_: Exception) {
+            ""
+        }
+
+        val throttled = response.code == 429 ||
+            response.code == 403 ||
+            body.contains("rate_limited", true) ||
+            body.contains("1015")
+
+        if (throttled) {
+            // Honour Retry-After, falling back to the JSON body then to a one-minute guess.
+            val retryAfter = response.headers["retry-after"]?.toLongOrNull()
+                ?: Regex(""""retryAfterSec"\s*:\s*(\d+)""")
+                    .find(body)?.groupValues?.get(1)?.toLongOrNull()
+                ?: 65L
+            sourcesBlockedUntil = System.currentTimeMillis() +
+                retryAfter.coerceIn(3L, 120L) * 1_000L
+            return null
+        }
+
+        if (response.code !in 200..299) return null
+        return parseSources(body)
+    }
+
+    private suspend fun awaitSourcesWindow() {
+        val remaining = sourcesBlockedUntil - System.currentTimeMillis()
+        if (remaining > 0) delay(remaining.coerceAtMost(SOURCES_MAX_BLOCK_MS))
+    }
+
+    private fun cacheSources(key: String, payload: SourcePayload) {
+        val now = System.currentTimeMillis()
+        if (sourcesCache.size > 48) {
+            sourcesCache.entries.removeAll { now - it.value.at >= SOURCES_TTL_MS }
+        }
+        sourcesCache[key] = CachedSources(payload, now)
+    }
+
+    /** Plain JSON, or the `application/x-ndjson` stream the site uses for slow resolutions. */
+    private fun parseSources(body: String): SourcePayload? {
+        val trimmed = body.trim()
+        if (trimmed.isEmpty()) return null
+
+        if (trimmed.startsWith("{")) {
+            return try {
+                val root = JSONObject(trimmed)
+                SourcePayload(root.optJSONArray("sources"), root.optJSONArray("subtitles"))
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        val sources = JSONArray()
+        var subtitles: JSONArray? = null
+        var seen = false
+        for (line in trimmed.lineSequence()) {
+            val chunk = line.trim().removePrefix("data:").trim()
+            if (chunk.isEmpty() || chunk.startsWith(":")) continue
+            val obj = try {
+                JSONObject(chunk)
+            } catch (_: Exception) {
+                continue
+            }
+            seen = true
+            obj.optJSONArray("sources")?.let { list ->
+                for (i in 0 until list.length()) list.optJSONObject(i)?.let { sources.put(it) }
+            }
+            obj.optJSONArray("subtitles")?.let { if (it.length() > 0) subtitles = it }
+        }
+        return if (seen) SourcePayload(sources, subtitles) else null
     }
 
     // ---------------------------------------------------------------- arabic subs

@@ -34,6 +34,7 @@ This repository provides provider extensions for [CloudStream](https://github.co
 - **Search**: Search movies and series via `/api/search` with `lang=ar-SA`
 - **Details**: Arabic titles/plots, genres in Arabic, score, recommendations, full season/episode lists
 - **Streaming links**: Emits **every** server returned by `/api/sources` (Orion, Swift, Quartz, Heron, Vidlove, Rive, Falcon, …)
+- **Rate-limit safe**: `/api/sources` responses are cached per episode, requested one at a time with a small gap, and retried with `Retry-After` support when the API degrades to the single Falcon fallback
 - **Subtitles**: **Arabic only** (NovaHD Arabic tracks when available + SubtitleCat fallback)
 - **Download support**: Supported
 - **Chromecast**: Supported
