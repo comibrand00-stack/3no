@@ -1,4 +1,4 @@
-version = 1
+version = 2
 
 cloudstream {
     description = "NovaHD — أفلام ومسلسلات بجودة عالية مع ترجمة عربية"
@@ -6,4 +6,5 @@ cloudstream {
     status = 1
     tvTypes = listOf("Movie", "TvSeries")
     language = "ar"
+    iconUrl = "https://novahd.cc/icons/icon-192.png"
 }

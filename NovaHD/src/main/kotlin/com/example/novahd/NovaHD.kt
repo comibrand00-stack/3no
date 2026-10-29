@@ -226,6 +226,7 @@ class NovaHD : MainAPI() {
         val plot = obj.optString("overview").ifBlank { null }
         val score = obj.optDouble("voteAverage", 0.0).takeIf { it > 0.0 }?.let { Score.from10(it) }
         val tags = genresOf(obj).map { arabicGenre(it) }.distinct().ifEmpty { null }
+        val actors = castNames(obj).map { ActorData(Actor(it)) }.ifEmpty { null }
         val recommendations = fetchRecommendations(ref)
 
         if (ref.type != "show") {
@@ -244,6 +245,7 @@ class NovaHD : MainAPI() {
                 this.score = score
                 this.backgroundPosterUrl = backdrop
                 this.duration = obj.optInt("runtime", 0).takeIf { it > 0 }
+                this.actors = actors
                 this.recommendations = recommendations
             }
         }
@@ -295,6 +297,7 @@ class NovaHD : MainAPI() {
             this.tags = tags
             this.score = score
             this.backgroundPosterUrl = backdrop
+            this.actors = actors
             this.recommendations = recommendations
             if (seasonNames.isNotEmpty()) this.seasonNames = seasonNames
         }
@@ -552,6 +555,17 @@ class NovaHD : MainAPI() {
         is JSONArray -> (0 until raw.length()).mapNotNull { raw.optString(it).ifBlank { null } }
         is String -> raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
         else -> emptyList()
+    }
+
+    /** `cast` is a JSON-encoded string such as `["Actor One","Actor Two"]` */
+    private fun castNames(obj: JSONObject): List<String> {
+        val raw = obj.optString("cast").ifBlank { return emptyList() }
+        return try {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { array.optString(it).ifBlank { null } }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     private fun arabicGenre(name: String): String = genreNames[name] ?: name
