@@ -303,26 +303,45 @@ class BingeBang : MainAPI() {
         val apiBase = seasonApi ?: mediaId?.let { "/api/tv/$it/season/" }
         if (seasons.isEmpty()) return emptyList()
 
-        val out = mutableListOf<Episode>()
-        for (number in seasons) {
-            var built = emptyList<Episode>()
-
-            if (apiBase != null) {
-                built = try {
-                    val body = app.get(
-                        absUrl(apiBase.trimEnd('/') + "/" + number),
-                        headers = apiHeaders(),
-                    ).text
-                    buildSeasonEpisodes(JSONObject(body).optJSONArray("episodes"), number, playUrl, showTitle)
-                } catch (_: Exception) {
-                    emptyList()
-                }
-            }
-            if (built.isEmpty()) built = buildSeasonEpisodes(inline[number], number, playUrl, showTitle)
-            if (built.isEmpty()) built = genericEpisodes(playUrl, showTitle, seasonEntries, number)
-            out += built
+        // Some shows have dozens of seasons, so fetch them in small parallel batches to keep
+        // the details page load fast without tripping the site's rate limiting.
+        val seasonList = seasons.toList()
+        val perSeason = mutableMapOf<Int, List<Episode>>()
+        for (chunk in seasonList.chunked(4)) {
+            coroutineScope {
+                chunk.map { number ->
+                    async { number to loadSeason(number, apiBase, inline, seasonEntries, playUrl, showTitle) }
+                }.awaitAll()
+            }.forEach { (number, built) -> perSeason[number] = built }
         }
+
+        val out = mutableListOf<Episode>()
+        for (number in seasonList) out += perSeason[number].orEmpty()
         return out
+    }
+
+    private suspend fun loadSeason(
+        number: Int,
+        apiBase: String?,
+        inline: Map<Int, JSONArray>,
+        seasonEntries: List<JSONObject>,
+        playUrl: String,
+        showTitle: String,
+    ): List<Episode> {
+        if (apiBase != null) {
+            val built = try {
+                val body = app.get(
+                    absUrl(apiBase.trimEnd('/') + "/" + number),
+                    headers = apiHeaders(),
+                ).text
+                buildSeasonEpisodes(JSONObject(body).optJSONArray("episodes"), number, playUrl, showTitle)
+            } catch (_: Exception) {
+                emptyList()
+            }
+            if (built.isNotEmpty()) return built
+        }
+        return buildSeasonEpisodes(inline[number], number, playUrl, showTitle)
+            .ifEmpty { genericEpisodes(playUrl, showTitle, seasonEntries, number) }
     }
 
     private fun buildSeasonEpisodes(
@@ -376,8 +395,9 @@ class BingeBang : MainAPI() {
         seasonEntries: List<JSONObject>,
         number: Int,
     ): List<Episode> {
-        val count = seasonEntries.firstOrNull { it.optInt("season_number", 0) == number }
-            ?.optInt("episode_count", 0) ?: 0
+        val entry = seasonEntries.firstOrNull { it.optInt("season_number", 0) == number }
+        val available = entry?.optInt("available_episodes", -1) ?: -1
+        val count = if (available >= 0) available else entry?.optInt("episode_count", 0) ?: 0
         if (count <= 0) return emptyList()
         return (1..count).map { episode ->
             newEpisode(
