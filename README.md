@@ -1,10 +1,10 @@
 # MovieProvider Repository
 
-A CloudStream 3 plugin repository with four plugins: **Qesset** (قصة عشق movies/series from `qesset.com`), **BingeBang** (movies/series with Arabic subtitles from `bingebang.st`), **alooyTV** (all alooytv lists: series, movies, anime from `ec.alooytv16.xyz`) and **CineHD Live** (live TV channels from `cinehd.vc`).
+A CloudStream 3 plugin repository with five plugins: **Qesset** (قصة عشق movies/series from `qesset.com`), **BingeBang** (movies/series with Arabic subtitles from `bingebang.st`), **alooyTV** (all alooytv lists: series, movies, anime from `ec.alooytv16.xyz`), **CineHD Live** (live TV channels from `cinehd.vc`) and **NovaHD** (Arabic movies/series with Arabic subtitles from `novahd.cc`).
 
 ## Overview
 
-This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, the `BingeBang` plugin uses the `bingebang.st` API, the `AlooyTV` plugin covers every alooytv list from `ec.alooytv16.xyz`, and the `CineHDLive` plugin provides live TV channels from the `cinehd.vc` API.
+This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, the `BingeBang` plugin uses the `bingebang.st` API, the `AlooyTV` plugin covers every alooytv list from `ec.alooytv16.xyz`, the `CineHDLive` plugin provides live TV channels from the `cinehd.vc` API, and the `NovaHD` plugin uses the `novahd.cc` API with Arabic catalogue data and every available server.
 
 ## Features
 
@@ -25,6 +25,16 @@ This repository provides provider extensions for [CloudStream](https://github.co
 - **Details**: Poster, year, plot, genres, trailer, recommendations, seasons/episodes
 - **Streaming links**: Resolves **all** servers from `/api/player/sources` (`/api/player/resolve`)
 - **Subtitles**: **Arabic only** (server subtitles filtered to Arabic + SubtitleCat fallback)
+- **Download support**: Supported
+- **Chromecast**: Supported
+
+### NovaHD
+
+- **Homepage sections (Arabic)**: Trending, popular/top-rated/new movies and series, plus 12 movie genres and 10 series genres (all labels in Arabic)
+- **Search**: Search movies and series via `/api/search` with `lang=ar-SA`
+- **Details**: Arabic titles/plots, genres in Arabic, score, recommendations, full season/episode lists
+- **Streaming links**: Emits **every** server returned by `/api/sources` (Orion, Swift, Quartz, Heron, Vidlove, Rive, Falcon, …)
+- **Subtitles**: **Arabic only** (site tracks + SubtitleCat fallback, since NovaHD has no Arabic track)
 - **Download support**: Supported
 - **Chromecast**: Supported
 
@@ -72,6 +82,25 @@ This repository provides provider extensions for [CloudStream](https://github.co
 - `search(query)` - Search via `/api/search/multi?query=<q>`
 - `load(url)` - Movie/series details (including seasons/episodes) from the `data-detail-payload` block
 - `loadLinks(data)` - Decrypts the player config, resolves **all** servers via `/api/player/sources` + `/api/player/resolve`, emits **Arabic subtitles only
+
+## Provider: NovaHD
+
+| Property | Value |
+|----------|-------|
+| **Name** | NovaHD |
+| **Provider** | NovaHD (`novahd.cc`) |
+| **Supported Types** | Movie, TvSeries |
+| **Language** | Arabic (`ar`) |
+| **Status** | Active |
+| **Chromecast** | Yes |
+| **Download** | Yes |
+
+### Methods
+
+- `getMainPage()` - Arabic rows: trending, popular/top-rated/new movies and series, 12 movie genres and 10 series genres via `/api/movies`, `/api/shows` and `/api/trending` with `lang=ar-SA`
+- `search(query)` - Search via `/api/search?search=<q>&lang=ar-SA`
+- `load(url)` - Movie/series details (Arabic title, plot, genres, recommendations and every season/episode) from `/api/movies/{id}` and `/api/shows/{id}`
+- `loadLinks(data)` - Calls `/api/sources` with the required `x-nova-visitor` UUID, emits **all** mirrors as separate sources, and adds **Arabic subtitles only** (site tracks + SubtitleCat fallback)
 
 ## Plugin: alooyTV
 
@@ -121,7 +150,7 @@ This repository provides provider extensions for [CloudStream](https://github.co
    ```
    https://raw.githubusercontent.com/comibrand00-stack/3no/master/repo.json
    ```
-4. The **قصة عشق (Qesset)**, **BingeBang**, **alooyTV** and **CineHD Live** providers will appear in the provider list
+4. The **قصة عشق (Qesset)**, **BingeBang**, **alooyTV**, **CineHD Live** and **NovaHD** providers will appear in the provider list
 
 ### Build from Source
 

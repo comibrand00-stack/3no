@@ -70,6 +70,7 @@ subprojects {
             "BingeBang" -> "com.example.bingebang"
             "AlooyTV" -> "com.example.alooytv"
             "CineHDLive" -> "com.example.cinehdlive"
+            "NovaHD" -> "com.example.novahd"
             else -> "com.example.movieprovider"
         }
 

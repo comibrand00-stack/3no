@@ -1,6 +1,6 @@
 {
     "name": "3no Repository",
-    "description": "CloudStream 3 providers: Qesset, BingeBang, alooyTV and CineHD Live TV",
+    "description": "CloudStream 3 providers: Qesset, BingeBang, alooyTV, CineHD Live TV and NovaHD",
     "manifestVersion": 1,
     "pluginLists": [
         "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/plugins.json"
