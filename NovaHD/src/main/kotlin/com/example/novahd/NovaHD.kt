@@ -148,7 +148,8 @@ class NovaHD : MainAPI() {
 
     private suspend fun fetchRow(path: String): List<SearchResponse> = try {
         val text = app.get(apiUrl(path), headers = apiHeaders()).text
-        JSONObject(text).optJSONArray("results")?.toSearchList().orEmpty()
+        val defaultType = if (path.startsWith("shows")) "show" else null
+        JSONObject(text).optJSONArray("results")?.toSearchList(defaultType).orEmpty()
     } catch (_: Exception) {
         emptyList()
     }
@@ -169,21 +170,23 @@ class NovaHD : MainAPI() {
         }
     }
 
-    private fun JSONArray.toSearchList(): List<SearchResponse> {
+    private fun JSONArray.toSearchList(defaultType: String? = null): List<SearchResponse> {
         val out = mutableListOf<SearchResponse>()
         for (i in 0 until length()) {
             val obj = optJSONObject(i) ?: continue
-            searchResponse(obj)?.let { out += it }
+            searchResponse(obj, defaultType)?.let { out += it }
         }
         return out
     }
 
-    private fun searchResponse(obj: JSONObject): SearchResponse? {
+    private fun searchResponse(obj: JSONObject, defaultType: String? = null): SearchResponse? {
         val id = obj.optInt("tmdbId", 0)
         if (id <= 0) return null
         val title = obj.optString("title").ifBlank { obj.optString("name") }.ifBlank { null }
             ?: return null
-        val isShow = obj.optString("type").equals("show", true)
+        // `/api/movies` and `/api/shows` list items omit `type`, so the caller supplies it.
+        val type = obj.optString("type").ifBlank { defaultType ?: "movie" }
+        val isShow = type.equals("show", true)
         val url = if (isShow) "$mainUrl/s/$id" else "$mainUrl/m/$id"
         val poster = image(obj.optString("posterPath"))
         val year = yearFrom(obj.optString("releaseDate").ifBlank { obj.optString("firstAirDate") })
