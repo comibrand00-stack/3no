@@ -1,4 +1,4 @@
-version = 4
+version = 5
 
 cloudstream {
     description = "NovaHD — أفلام ومسلسلات بجودة عالية مع ترجمة عربية"

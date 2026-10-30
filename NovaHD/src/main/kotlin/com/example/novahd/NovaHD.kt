@@ -24,9 +24,10 @@ import java.util.concurrent.ConcurrentHashMap
  *  - it only returns the full mirror list (and subtitles) when the request carries an
  *    `x-nova-visitor` UUID header. Without it the API silently falls back to a single
  *    Falcon/1080p source;
- *  - it is rate limited per IP (~a dozen requests then 429/403, followed by a few minutes
- *    where every reply is the Falcon fallback). That is why this plugin serialises the
- *    calls, keeps a per-episode cache, honours `Retry-After` and retries the Falcon answer.
+ *  - once the caller's IP is throttled it keeps answering with that Falcon fallback unless
+ *    the request looks like the site's own `fetch()`, i.e. carries `Sec-Fetch-*` headers.
+ *    This plugin sends them, serialises the calls, keeps a per-episode cache and honours
+ *    `Retry-After`, so the degraded answer cannot stick to the user.
  */
 class NovaHD : MainAPI() {
     override var mainUrl = "https://novahd.cc"
@@ -720,6 +721,11 @@ class NovaHD : MainAPI() {
         "Accept" to "application/json, text/plain, */*",
         "Referer" to "$mainUrl/",
         "x-nova-visitor" to visitorId,
+        // The site's own fetch() calls carry these; without them the API treats the caller as
+        // an unknown client and, once the IP is throttled, serves only the Falcon fallback.
+        "Sec-Fetch-Site" to "same-origin",
+        "Sec-Fetch-Mode" to "cors",
+        "Sec-Fetch-Dest" to "empty",
     )
 
     private fun pageHeaders(): Map<String, String> = mapOf(
