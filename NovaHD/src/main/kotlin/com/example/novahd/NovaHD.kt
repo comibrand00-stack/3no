@@ -588,6 +588,7 @@ class NovaHD : MainAPI() {
         }
 
         val sources = JSONArray()
+        val seenUrls = mutableSetOf<String>()
         var subtitles: JSONArray? = null
         var seen = false
         for (line in trimmed.lineSequence()) {
@@ -600,7 +601,12 @@ class NovaHD : MainAPI() {
             }
             seen = true
             obj.optJSONArray("sources")?.let { list ->
-                for (i in 0 until list.length()) list.optJSONObject(i)?.let { sources.put(it) }
+                for (i in 0 until list.length()) {
+                    val item = list.optJSONObject(i) ?: continue
+                    val url = item.optString("url")
+                    if (url.isBlank() || !seenUrls.add(url)) continue
+                    sources.put(item)
+                }
             }
             obj.optJSONArray("subtitles")?.let { if (it.length() > 0) subtitles = it }
         }
