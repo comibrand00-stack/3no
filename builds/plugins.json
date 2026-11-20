@@ -1,0 +1,123 @@
+[
+    {
+        "fileHash":  "sha256-761f9959ceaad1f1713b0ebb3946a2ec210784595fa258a6365137c58722cf3e",
+        "apiVersion":  1,
+        "repositoryUrl":  "https://github.com/comibrand00-stack/3no",
+        "fileSize":  28117,
+        "status":  1,
+        "language":  "ar",
+        "authors":  [
+                        "comibrand00-stack"
+                    ],
+        "tvTypes":  [
+                        "Movie",
+                        "TvSeries"
+                    ],
+        "version":  4,
+        "internalName":  "AlooyTV",
+        "description":  "alooyTV - Arabic, Gulf, Turkish and Korean series and movies",
+        "url":  "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/AlooyTV.cs3",
+        "name":  "AlooyTV"
+    },
+    {
+        "fileHash":  "sha256-f54904cd0ca31b3bbd894886152a40ec1f82affdcb82035af72036c42eb43f96",
+        "apiVersion":  1,
+        "repositoryUrl":  "https://github.com/comibrand00-stack/3no",
+        "fileSize":  42408,
+        "status":  1,
+        "language":  "en",
+        "authors":  [
+                        "comibrand00-stack"
+                    ],
+        "tvTypes":  [
+                        "Movie",
+                        "TvSeries"
+                    ],
+        "version":  5,
+        "internalName":  "BingeBang",
+        "description":  "BingeBang - movies and series with Arabic subtitles",
+        "url":  "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/BingeBang.cs3",
+        "name":  "BingeBang"
+    },
+    {
+        "iconUrl":  "https://cinehd.vc/icon-192x192.png",
+        "fileHash":  "sha256-0eadf9f85c85ad9035dc69ba85a8e00092ab832051cd654bce56cd55d3c61efe",
+        "apiVersion":  1,
+        "repositoryUrl":  "https://github.com/comibrand00-stack/3no",
+        "fileSize":  33715,
+        "status":  1,
+        "language":  "ar",
+        "authors":  [
+                        "comibrand00-stack"
+                    ],
+        "tvTypes":  [
+                        "Live"
+                    ],
+        "version":  4,
+        "internalName":  "CineHDLive",
+        "description":  "CineHD Live TV - Arabic and international live channels",
+        "url":  "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/CineHDLive.cs3",
+        "name":  "CineHDLive"
+    },
+    {
+        "iconUrl":  "https://novahd.cc/icons/icon-192.png",
+        "fileHash":  "sha256-8d8145f04bff932301d469d1dcdd642a0910b750ad5c6d03fe2a8678ea39a5bd",
+        "apiVersion":  1,
+        "repositoryUrl":  "https://github.com/comibrand00-stack/3no",
+        "fileSize":  41349,
+        "status":  1,
+        "language":  "ar",
+        "authors":  [
+                        "comibrand00-stack"
+                    ],
+        "tvTypes":  [
+                        "Movie",
+                        "TvSeries"
+                    ],
+        "version":  5,
+        "internalName":  "NovaHD",
+        "description":  "NovaHD ó √›·«„ Ê„”·”·«  »ÃÊœ… ⁄«·Ì… „⁄  —Ã„… ⁄—»Ì…",
+        "url":  "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/NovaHD.cs3",
+        "name":  "NovaHD"
+    },
+    {
+        "fileHash":  "sha256-3dc1992cd95dba0530026226ec8aebc68a204aa0b28e62de3c6ca98b46ddb749",
+        "apiVersion":  1,
+        "repositoryUrl":  "https://github.com/comibrand00-stack/3no",
+        "fileSize":  23631,
+        "status":  1,
+        "language":  "ar",
+        "authors":  [
+                        "comibrand00-stack"
+                    ],
+        "tvTypes":  [
+                        "Movie",
+                        "TvSeries"
+                    ],
+        "version":  2,
+        "internalName":  "Qesset",
+        "description":  "ﬁ’… ⁄‘ﬁ (Qesset) - movies and series provider",
+        "url":  "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/Qesset.cs3",
+        "name":  "Qesset"
+    },
+    {
+        "fileHash":  "sha256-7a47a0030e6bd8ea00f3e39953920e567423360e24938d4d1e47dcde42c99c72",
+        "apiVersion":  1,
+        "repositoryUrl":  "https://github.com/comibrand00-stack/3no",
+        "fileSize":  15114,
+        "status":  1,
+        "language":  "en",
+        "authors":  [
+                        "comibrand00-stack"
+                    ],
+        "tvTypes":  [
+                        "Movie",
+                        "TvSeries"
+                    ],
+        "version":  1,
+        "internalName":  "FprimeProvider",
+        "description":  "fprime - movies and series streaming",
+        "url":  "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/FprimeProvider.cs3",
+        "name":  "fprime"
+    }
+]
