@@ -13,6 +13,7 @@ class FprimeProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
     override var lang = "en"
     override val hasMainPage = true
+    override val hasQuickSearch = true
 
     private val astraBase = "https://serverone.insidethisplaceiswarm.cc/astra"
     private val aesKeyHex = "cc668a8304b57864709efdfc0051a619e146c0c8b486f190a06d1c1cf96af698"
@@ -44,7 +45,8 @@ class FprimeProvider : MainAPI() {
         return String(decrypted, Charsets.UTF_8)
     }
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
+        if (page > 1) return null
         val trendingText = app.get("$mainUrl/trending/all/week?language=en-US").text
         val trendingJson = JSONObject(trendingText)
         val trendingArr = trendingJson.optJSONArray("results")
