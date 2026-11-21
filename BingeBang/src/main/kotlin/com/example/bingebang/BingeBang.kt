@@ -13,7 +13,9 @@ import java.security.MessageDigest
 import java.util.Base64
 
 class BingeBang : MainAPI() {
-    override var mainUrl = "https://bingebang.st"
+    // The old .st domain now 302-redirects here. Using it as the Referer/Origin makes
+    // /api/player/sources answer 403 "forbidden", so the player ends up with no mirrors.
+    override var mainUrl = "https://bingebang.sx"
     override var name = "BingeBang"
     override var lang = "en"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
@@ -164,6 +166,7 @@ class BingeBang : MainAPI() {
     // ---------------------------------------------------------------- details
 
     override suspend fun load(url: String): LoadResponse? {
+        val url = canonical(url)
         val html = app.get(url, headers = pageHeaders()).text
         val marker = "data-detail-payload>"
         val start = html.indexOf(marker)
@@ -429,7 +432,7 @@ class BingeBang : MainAPI() {
         } catch (_: Exception) {
             null
         }
-        val playUrl = info?.optString("u")?.ifBlank { null } ?: data
+        val playUrl = canonical(info?.optString("u")?.ifBlank { null } ?: data)
         if (!playUrl.startsWith("http")) return false
 
         val title = info?.optString("t")?.ifBlank { null }
@@ -589,12 +592,18 @@ class BingeBang : MainAPI() {
         "User-Agent" to BROWSER_UA,
         "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Referer" to "$mainUrl/",
+        "Sec-Fetch-Site" to "same-origin",
+        "Sec-Fetch-Mode" to "navigate",
+        "Sec-Fetch-Dest" to "document",
     )
 
     private fun apiHeaders(): Map<String, String> = mapOf(
         "User-Agent" to BROWSER_UA,
         "Accept" to "application/json, text/plain, */*",
         "Referer" to "$mainUrl/",
+        "Sec-Fetch-Site" to "same-origin",
+        "Sec-Fetch-Mode" to "cors",
+        "Sec-Fetch-Dest" to "empty",
     )
 
     private data class ResolvedServer(
@@ -645,11 +654,19 @@ class BingeBang : MainAPI() {
         "Origin" to mainUrl,
         "X-BB-Player" to "1",
         "X-BB-Ticket" to ticket,
+        "Sec-Fetch-Site" to "same-origin",
+        "Sec-Fetch-Mode" to "cors",
+        "Sec-Fetch-Dest" to "empty",
     )
+
+    /** Old saved links point at the retired .st domain, which now redirects to .sx. */
+    private fun canonical(url: String): String = url
+        .replace("https://bingebang.st", mainUrl)
+        .replace("http://bingebang.st", mainUrl)
 
     private fun absUrl(path: String): String = when {
         path.isBlank() -> path
-        path.startsWith("http") -> path
+        path.startsWith("http") -> canonical(path)
         path.startsWith("/") -> mainUrl + path
         else -> "$mainUrl/$path"
     }

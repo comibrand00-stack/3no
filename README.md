@@ -1,10 +1,10 @@
 # MovieProvider Repository
 
-A CloudStream 3 plugin repository with five plugins: **Qesset** (قصة عشق movies/series from `qesset.com`), **BingeBang** (movies/series with Arabic subtitles from `bingebang.st`), **alooyTV** (all alooytv lists: series, movies, anime from `ec.alooytv16.xyz`), **CineHD Live** (live TV channels from `cinehd.vc`) and **NovaHD** (Arabic movies/series with Arabic subtitles from `novahd.cc`).
+A CloudStream 3 plugin repository with five plugins: **Qesset** (قصة عشق movies/series from `qesset.com`), **BingeBang** (movies/series with Arabic subtitles from `bingebang.sx`), **alooyTV** (all alooytv lists: series, movies, anime from `ec.alooytv16.xyz`), **CineHD Live** (live TV channels from `cinehd.vc`) and **NovaHD** (Arabic movies/series with Arabic subtitles from `novahd.cc`).
 
 ## Overview
 
-This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, the `BingeBang` plugin uses the `bingebang.st` API, the `AlooyTV` plugin covers every alooytv list from `ec.alooytv16.xyz`, the `CineHDLive` plugin provides live TV channels from the `cinehd.vc` API, and the `NovaHD` plugin uses the `novahd.cc` API with Arabic catalogue data and every available server.
+This repository provides provider extensions for [CloudStream](https://github.com/recloudstream/cloudstream), an Android TV streaming application. The `Qesset` plugin scrapes content from `qesset.com`, the `BingeBang` plugin uses the `bingebang.sx` API, the `AlooyTV` plugin covers every alooytv list from `ec.alooytv16.xyz`, the `CineHDLive` plugin provides live TV channels from the `cinehd.vc` API, and the `NovaHD` plugin uses the `novahd.cc` API with Arabic catalogue data and every available server.
 
 ## Features
 
