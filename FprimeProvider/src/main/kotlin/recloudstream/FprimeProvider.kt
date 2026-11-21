@@ -61,7 +61,7 @@ class FprimeProvider : MainAPI() {
                 val isTv = mediaType == "tv"
                 val url = if (isTv) "fprime://tv/$id" else "fprime://movie/$id"
                 trendingList.add(newMovieSearchResponse(title, url, if (isTv) TvType.TvSeries else TvType.Movie) {
-                    posterUrl = if (poster.isNotEmpty()) "https://image.tmdb.org/t/p/w342$poster" else null
+                    this.posterUrl = if (poster.isNotEmpty()) "https://image.tmdb.org/t/p/w342$poster" else null
                 })
             }
         }
@@ -86,7 +86,7 @@ class FprimeProvider : MainAPI() {
             val isTv = mt == "tv"
             val url = if (isTv) "fprime://tv/$id" else "fprime://movie/$id"
             list.add(newMovieSearchResponse(title, url, if (isTv) TvType.TvSeries else TvType.Movie) {
-                posterUrl = if (poster.isNotEmpty()) "https://image.tmdb.org/t/p/w342$poster" else null
+                this.posterUrl = if (poster.isNotEmpty()) "https://image.tmdb.org/t/p/w342$poster" else null
             })
         }
         return list.toNewSearchResponseList()
@@ -123,9 +123,9 @@ class FprimeProvider : MainAPI() {
                 }
             } catch (e: Exception) { }
             return newTvSeriesLoadResponse(name, url, TvType.TvSeries, episodes) {
-                plot = overview
-                posterUrl = if (poster.isNotEmpty()) "https://image.tmdb.org/t/p/w500$poster" else null
-                year = firstAir.take(4).toIntOrNull()
+                this.plot = overview
+                this.posterUrl = if (poster.isNotEmpty()) "https://image.tmdb.org/t/p/w500$poster" else null
+                this.year = firstAir.take(4).toIntOrNull()
             }
         } else {
             val text = app.get("$mainUrl/movie/$tmdbId?language=en-US").text
@@ -135,9 +135,9 @@ class FprimeProvider : MainAPI() {
             val poster = json.optString("poster_path")
             val release = json.optString("release_date")
             return newMovieLoadResponse(title, url, TvType.Movie, tmdbId) {
-                plot = overview
-                posterUrl = if (poster.isNotEmpty()) "https://image.tmdb.org/t/p/w500$poster" else null
-                year = release.take(4).toIntOrNull()
+                this.plot = overview
+                this.posterUrl = if (poster.isNotEmpty()) "https://image.tmdb.org/t/p/w500$poster" else null
+                this.year = release.take(4).toIntOrNull()
             }
         }
     }
@@ -182,3 +182,4 @@ class FprimeProvider : MainAPI() {
         }
     }
 }
+

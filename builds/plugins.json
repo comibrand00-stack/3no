@@ -101,10 +101,10 @@
         "name":  "Qesset"
     },
     {
-        "fileHash":  "sha256-c0ddc35ac6d4f37f8e377134500ee22e598311270a4d9887f625878dc458741a",
+        "fileHash":  "sha256-4467162b4429457c4dc12295d0e425f41d1956986d63628df2f98ae2b466283a",
         "apiVersion":  1,
         "repositoryUrl":  "https://github.com/comibrand00-stack/3no",
-        "fileSize":  15052,
+        "fileSize":  15053,
         "status":  1,
         "language":  "en",
         "authors":  [
@@ -114,7 +114,7 @@
                         "Movie",
                         "TvSeries"
                     ],
-        "version":  2,
+        "version":  3,
         "internalName":  "FprimeProvider",
         "description":  "fprime - movies and series streaming",
         "url":  "https://raw.githubusercontent.com/comibrand00-stack/3no/builds/FprimeProvider.cs3",
