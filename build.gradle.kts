@@ -71,7 +71,6 @@ subprojects {
             "AlooyTV" -> "com.example.alooytv"
             "CineHDLive" -> "com.example.cinehdlive"
             "NovaHD" -> "com.example.novahd"
-            "FprimeProvider" -> "com.example.fprime"
             else -> "com.example.movieprovider"
         }
 
@@ -117,3 +116,4 @@ subprojects {
 task<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+
